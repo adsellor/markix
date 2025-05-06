@@ -7,7 +7,7 @@ const TextWidget = @import("widgets/Text.zig").TextWidget;
 const TextListWidget = @import("widgets/TextList.zig").TextListWidget;
 const ScrollView = @import("widgets/ScrollView.zig").ScrollView;
 const PopupWidget = @import("widgets/Popup.zig").PopupWidget;
-const KeyHandler = @import("widgets/Keyboard.zig").KeyHandler;
+const KeyHandler = @import("modules/keyboard.zig");
 
 pub fn main() !void {
     const original_termios = try KeyHandler.enableRawMode();
@@ -35,7 +35,7 @@ pub fn main() !void {
         "Item 14",
     };
 
-    const visible_height = 5;
+    const visible_height = 300;
     const list_width = 50;
     var scroll_view = ScrollView.init(0, 0, list_width, visible_height, items.len);
     var list_widget = TextListWidget.init(&items, 0, 0, list_width, visible_height);
@@ -127,10 +127,7 @@ pub fn main() !void {
                 const selected_item = list_widget.getSelectedItem();
                 if (selected_item) |item| {
                     var buf: [128]u8 = undefined;
-                    const message = try std.fmt.bufPrint(&buf, "Item: {s}\nIndex: {d}\nPress 'p' to close", .{
-                        item,
-                        list_widget.selected_index orelse 0
-                    });
+                    const message = try std.fmt.bufPrint(&buf, "Item: {s}\nIndex: {d}\nPress 'p' to close", .{ item, list_widget.selected_index orelse 0 });
                     popup.setMessage(message);
                     popup.show();
                     try popup.render(stdout);

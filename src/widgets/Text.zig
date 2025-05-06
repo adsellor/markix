@@ -38,4 +38,3 @@ pub const TextWidget = struct {
         }
     }
 };
-
