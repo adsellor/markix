@@ -7,7 +7,7 @@ const TextWidget = @import("widgets/Text.zig").TextWidget;
 const TextListWidget = @import("widgets/TextList.zig").TextListWidget;
 const ScrollView = @import("widgets/ScrollView.zig").ScrollView;
 const PopupWidget = @import("widgets/Popup.zig").PopupWidget;
-const KeyHandler = @import("widgets/Peyboard.zig").KeyHandler;
+const KeyHandler = @import("widgets/Keyboard.zig").KeyHandler;
 
 pub fn main() !void {
     const original_termios = try KeyHandler.enableRawMode();

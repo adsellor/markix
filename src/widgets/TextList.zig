@@ -1,7 +1,7 @@
 const std = @import("std");
 const mem = std.mem;
-const text = @import("text.zig");
-const ScrollView = @import("scroll-view.zig").ScrollView;
+const text = @import("Text.zig");
+const ScrollView = @import("ScrollView.zig").ScrollView;
 
 pub const TextListWidget = struct {
     items: []const []const u8,
