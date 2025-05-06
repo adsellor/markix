@@ -3,11 +3,11 @@ const io = std.io;
 const fs = std.fs;
 const process = std.process;
 const mem = std.mem;
-const TextWidget = @import("widgets/text.zig").TextWidget;
-const TextListWidget = @import("widgets/text-list.zig").TextListWidget;
-const ScrollView = @import("widgets/scroll-view.zig").ScrollView;
-const PopupWidget = @import("widgets/popup.zig").PopupWidget;
-const KeyHandler = @import("widgets/keyboard.zig").KeyHandler;
+const TextWidget = @import("widgets/Text.zig").TextWidget;
+const TextListWidget = @import("widgets/TextList.zig").TextListWidget;
+const ScrollView = @import("widgets/ScrollView.zig").ScrollView;
+const PopupWidget = @import("widgets/Popup.zig").PopupWidget;
+const KeyHandler = @import("widgets/Peyboard.zig").KeyHandler;
 
 pub fn main() !void {
     const original_termios = try KeyHandler.enableRawMode();
