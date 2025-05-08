@@ -18,7 +18,9 @@ pub fn enableRawMode() !posix.termios {
     termios.iflag.BRKINT = false;
     termios.iflag.INPCK = false;
     termios.iflag.ISTRIP = false;
+
     termios.oflag.OPOST = false;
+
     termios.cflag.CSIZE = .CS8;
 
     termios.cc[@intFromEnum(posix.V.MIN)] = 1;

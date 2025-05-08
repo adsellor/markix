@@ -1,143 +1,76 @@
 const std = @import("std");
-const io = std.io;
-const fs = std.fs;
-const process = std.process;
 const mem = std.mem;
-const TextWidget = @import("widgets/Text.zig").TextWidget;
-const TextListWidget = @import("widgets/TextList.zig").TextListWidget;
-const ScrollView = @import("widgets/ScrollView.zig").ScrollView;
-const PopupWidget = @import("widgets/Popup.zig").PopupWidget;
-const KeyHandler = @import("modules/keyboard.zig");
+const Color = @import("layout/Color.zig").Color;
+const terminal = @import("layout/Canvas.zig");
 
 pub fn main() !void {
-    const original_termios = try KeyHandler.enableRawMode();
-    defer KeyHandler.disableRawMode(original_termios) catch {};
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-    const stdout_file = std.io.getStdOut();
-    const stdout = stdout_file.writer();
+    try terminal.TerminalCanvas.enterAlternateScreen();
+    defer terminal.TerminalCanvas.exitAlternateScreen() catch {};
 
-    try stdout.writeAll("\x1B[2J\x1B[H");
+    var canvas = try terminal.TerminalCanvas.initAutoSize(allocator);
+    defer canvas.deinit();
 
-    const items = [_][]const u8{
-        "Item 1",
-        "Item 2",
-        "Item 3",
-        "Item 4",
-        "Item 5",
-        "Item 6",
-        "Item 7",
-        "Item 8",
-        "Item 9",
-        "Item 10",
-        "Item 11",
-        "Item 12",
-        "Item 13",
-        "Item 14",
-    };
+    canvas.setRefreshLimit(120);
 
-    const visible_height = 300;
-    const list_width = 50;
-    var scroll_view = ScrollView.init(0, 0, list_width, visible_height, items.len);
-    var list_widget = TextListWidget.init(&items, 0, 0, list_width, visible_height);
-    list_widget.setSelectedIndex(0);
+    const white = Color.fromRgb(255, 255, 255);
+    const bg_color = Color.fromRgb(10, 10, 40);
 
-    list_widget.setScrollView(&scroll_view);
-
-    var popup = PopupWidget.init(10, 3, 30, 5, "Information", "Press 'p' to hide this popup\nSelection: None");
-
-    try list_widget.render(stdout);
-
-    try stdout.print("\x1B[{d};1H", .{visible_height + 2});
-
-    const stdin = std.io.getStdIn();
-    const stdin_reader = stdin.reader();
+    var frame_count: u32 = 0;
 
     while (true) {
-        const key = try KeyHandler.readKey(stdin_reader);
+        var pollfds = [_]std.posix.pollfd{
+            .{ .fd = 0, .events = std.posix.POLL.IN, .revents = 0 },
+        };
 
-        switch (key) {
-            'q' => break,
-            'j' => {
-                list_widget.moveSelection(1);
+        const poll_result = try std.posix.poll(&pollfds, 0);
 
-                const selected_item = list_widget.getSelectedItem();
-                if (selected_item) |item| {
-                    var buf: [64]u8 = undefined;
-                    const message = try std.fmt.bufPrint(&buf, "Press 'p' to hide this popup\nSelection: {s}", .{item});
-                    popup.setMessage(message);
-                }
-
-                try list_widget.render(stdout);
-                if (popup.is_visible) {
-                    try popup.render(stdout);
-                }
-            },
-            'k' => {
-                list_widget.moveSelection(-1);
-
-                const selected_item = list_widget.getSelectedItem();
-                if (selected_item) |item| {
-                    var buf: [64]u8 = undefined;
-                    const message = try std.fmt.bufPrint(&buf, "Press 'p' to hide this popup\nSelection: {s}", .{item});
-                    popup.setMessage(message);
-                }
-
-                try list_widget.render(stdout);
-                if (popup.is_visible) {
-                    try popup.render(stdout);
-                }
-            },
-            'p' => {
-                if (popup.is_visible) {
-                    popup.hide();
-                    try popup.clearArea(stdout);
-                    try list_widget.render(stdout);
-                } else {
-                    const selected_item = list_widget.getSelectedItem();
-                    if (selected_item) |item| {
-                        var buf: [64]u8 = undefined;
-                        const message = try std.fmt.bufPrint(&buf, "Press 'p' to hide\nSelection: {s}", .{item});
-                        popup.setMessage(message);
-                    }
-                    popup.show();
-                    try popup.render(stdout);
-                }
-            },
-            'J' => {
-                scroll_view.scrollDown();
-                try list_widget.render(stdout);
-                if (popup.is_visible) {
-                    try popup.render(stdout);
-                }
-            },
-            'K' => {
-                scroll_view.scrollUp();
-                try list_widget.render(stdout);
-                if (popup.is_visible) {
-                    try popup.render(stdout);
-                }
-            },
-            'i' => {
-                if (popup.is_visible) {
-                    popup.hide();
-                    try popup.clearArea(stdout);
-                    try list_widget.render(stdout);
-                }
-                popup.setTitle("Item Info");
-                const selected_item = list_widget.getSelectedItem();
-                if (selected_item) |item| {
-                    var buf: [128]u8 = undefined;
-                    const message = try std.fmt.bufPrint(&buf, "Item: {s}\nIndex: {d}\nPress 'p' to close", .{ item, list_widget.selected_index orelse 0 });
-                    popup.setMessage(message);
-                    popup.show();
-                    try popup.render(stdout);
-                }
-            },
-            else => {},
+        if (poll_result > 0 and (pollfds[0].revents & std.posix.POLL.IN) != 0) {
+            const event = try terminal.readEvent(std.io.getStdIn().reader());
+            if (event == .Key and event.Key == 'q') {
+                break;
+            }
         }
 
-        try stdout.print("\x1B[{d};1H", .{visible_height + 3});
-    }
+        canvas.clear();
+        canvas.clearText();
 
-    try stdout.writeAll("\x1B[2J\x1B[H");
+        for (0..canvas.width) |x| {
+            for (0..canvas.height) |y| {
+                canvas.setPixel(@intCast(x), @intCast(y), bg_color);
+            }
+        }
+
+        const wave_y = 70;
+
+        for (0..canvas.width) |x| {
+            const wave_offset = @as(i32, @intFromFloat(8.0 * @sin(@as(f32, @floatFromInt(frame_count)) / 15.0 +
+                @as(f32, @floatFromInt(x)) / 20.0)));
+
+            const pos_y = @as(i32, @intCast(wave_y)) + wave_offset;
+            if (pos_y >= 0 and pos_y < canvas.height) {
+                const hue = @as(f32, @floatFromInt(x)) / @as(f32, @floatFromInt(canvas.width)) * 360.0 +
+                    @as(f32, @floatFromInt(frame_count));
+                const r = @as(u8, @intFromFloat(127.5 + 127.5 * @sin(hue * std.math.pi / 180.0)));
+                const g = @as(u8, @intFromFloat(127.5 + 127.5 * @sin((hue + 120.0) * std.math.pi / 180.0)));
+                const b = @as(u8, @intFromFloat(127.5 + 127.5 * @sin((hue + 240.0) * std.math.pi / 180.0)));
+
+                canvas.setPixel(@intCast(x), @intCast(pos_y), Color.fromRgb(r, g, b));
+            }
+        }
+
+        try canvas.addText(10, 1, "This text is rendered the terminal", white, bg_color);
+        try canvas.addText(10, 2, "while the wave is rendered by the canvas.", white, bg_color);
+
+        var fps_buf: [20]u8 = undefined;
+        const fps_text = try std.fmt.bufPrint(&fps_buf, "Target FPS: {d}", .{120});
+        try canvas.addText(@intCast(canvas.width - 30), 1, fps_text, white, bg_color);
+
+        try canvas.render();
+
+        frame_count += 1;
+    }
 }
