@@ -3,7 +3,6 @@ const builtin = @import("builtin");
 
 const Color = @import("Color.zig").Color;
 const Patch = @import("Patch.zig").Patch;
-const TextLayer = @import("TextLayer.zig").TextLayer;
 
 const terminal_utils = @import("../utils/terminal.zig");
 
@@ -23,8 +22,44 @@ pub const TerminalCanvas = struct {
     last_frame_time: i128,
     last_loop_width: u32 = 0,
     last_loop_height: u32 = 0,
-    text_layer: TextLayer,
-    render_mode: enum { PixelsOnly, TextOnly, Combined } = .Combined,
+    text_entries: std.ArrayList(TextEntry),
+    previous_text_entries: std.ArrayList(TextEntry),
+
+    pub const TextEntry = struct {
+        x: u32,
+        y: u32,
+        text: []const u8,
+        foreground_color: Color,
+        background_color: ?Color = null,
+
+        pub fn deinit(self: *TextEntry, allocator: Allocator) void {
+            allocator.free(self.text);
+        }
+
+        pub fn clone(self: *const TextEntry, allocator: Allocator) !TextEntry {
+            const text_copy = try allocator.alloc(u8, self.text.len);
+            @memcpy(text_copy, self.text);
+
+            return TextEntry{
+                .x = self.x,
+                .y = self.y,
+                .text = text_copy,
+                .foreground_color = self.foreground_color,
+                .background_color = self.background_color,
+            };
+        }
+
+        pub fn equals(self: *const TextEntry, other: *const TextEntry) bool {
+            if (self.x != other.x or self.y != other.y) return false;
+            if (!self.foreground_color.equals(other.foreground_color)) return false;
+
+            const self_bg = self.background_color orelse Color.fromRgba(0, 0, 0, 0);
+            const other_bg = other.background_color orelse Color.fromRgba(0, 0, 0, 0);
+            if (!self_bg.equals(other_bg)) return false;
+
+            return mem.eql(u8, self.text, other.text);
+        }
+    };
 
     pub fn init(allocator: Allocator, width: u32, height: u32) !TerminalCanvas {
         const buffer = try allocator.alloc(Color, width * height);
@@ -41,7 +76,8 @@ pub const TerminalCanvas = struct {
             .allocator = allocator,
             .frame_limit_nanos = 1_000_000_000 / 120,
             .last_frame_time = time.nanoTimestamp(),
-            .text_layer = TextLayer.init(allocator),
+            .text_entries = std.ArrayList(TextEntry).init(allocator),
+            .previous_text_entries = std.ArrayList(TextEntry).init(allocator),
         };
     }
 
@@ -53,7 +89,16 @@ pub const TerminalCanvas = struct {
     }
 
     pub fn deinit(self: *TerminalCanvas) void {
-        self.text_layer.deinit();
+        for (self.text_entries.items) |*entry| {
+            entry.deinit(self.allocator);
+        }
+        self.text_entries.deinit();
+
+        for (self.previous_text_entries.items) |*entry| {
+            entry.deinit(self.allocator);
+        }
+        self.previous_text_entries.deinit();
+
         self.allocator.free(self.buffer);
         self.allocator.free(self.previous_buffer);
     }
@@ -87,9 +132,21 @@ pub const TerminalCanvas = struct {
         }
     }
 
+    pub fn addText(self: *TerminalCanvas, x: u32, y: u32, text: []const u8, fg: Color, bg: ?Color) !void {
+        const text_copy = try self.allocator.alloc(u8, text.len);
+        @memcpy(text_copy, text);
+
+        try self.text_entries.append(TextEntry{
+            .x = x,
+            .y = y,
+            .text = text_copy,
+            .foreground_color = fg,
+            .background_color = bg,
+        });
+    }
+
     fn calculatePatches(self: *const TerminalCanvas) !std.ArrayList(Patch) {
         var patches = std.ArrayList(Patch).init(self.allocator);
-
         var active_patch: ?Patch = null;
 
         var y: usize = 0;
@@ -128,6 +185,53 @@ pub const TerminalCanvas = struct {
 
         if (active_patch != null) {
             try patches.append(active_patch.?);
+        }
+
+        var previous_text_positions = std.AutoHashMap(u64, usize).init(self.allocator);
+        defer previous_text_positions.deinit();
+
+        for (self.previous_text_entries.items, 0..) |entry, i| {
+            const position_key = (@as(u64, entry.y) << 32) | entry.x;
+            try previous_text_positions.put(position_key, i);
+        }
+
+        for (self.text_entries.items) |entry| {
+            const position_key = (@as(u64, entry.y) << 32) | entry.x;
+
+            var changed = true;
+            if (previous_text_positions.get(position_key)) |prev_idx| {
+                const prev_entry = &self.previous_text_entries.items[prev_idx];
+                if (entry.equals(prev_entry)) {
+                    changed = false;
+                }
+                _ = previous_text_positions.remove(position_key);
+            }
+
+            if (changed) {
+                const text_patch = try Patch.initForText(self.allocator, @intCast(entry.x), @intCast(entry.y), entry.text, entry.foreground_color, entry.background_color);
+                try patches.append(text_patch);
+            }
+        }
+
+        var it = previous_text_positions.iterator();
+        while (it.next()) |kv| {
+            const prev_idx = kv.value_ptr.*;
+            const entry = &self.previous_text_entries.items[prev_idx];
+
+            const clear_text = try self.allocator.alloc(u8, entry.text.len);
+            defer self.allocator.free(clear_text);
+            @memset(clear_text, ' ');
+
+            const clear_patch = try Patch.initForText(
+                self.allocator,
+                @intCast(entry.x),
+                @intCast(entry.y),
+                clear_text,
+                Color.fromRgb(0, 0, 0),
+                Color.fromRgb(0, 0, 0),
+            );
+
+            try patches.append(clear_patch);
         }
 
         return patches;
@@ -187,14 +291,6 @@ pub const TerminalCanvas = struct {
         self.height = height;
     }
 
-    pub fn clearText(self: *TerminalCanvas) void {
-        self.text_layer.clear();
-    }
-
-    pub fn addText(self: *TerminalCanvas, x: u16, y: u16, text: []const u8, fg: Color, bg: ?Color) !void {
-        try self.text_layer.addText(x, y, text, fg, bg);
-    }
-
     pub fn render(self: *TerminalCanvas) !void {
         self.waitForNextFrame();
 
@@ -204,33 +300,38 @@ pub const TerminalCanvas = struct {
 
         var buffered_writer = buffer.writer();
 
-        if (self.render_mode != .TextOnly) {
-            buffered_writer.writeAll("\x1B[?25l") catch {};
+        buffered_writer.writeAll("\x1B[?25l") catch {};
 
-            const patches = try self.calculatePatches();
-            for (patches.items) |patch| {
-                try patch.apply(buffered_writer);
-            }
-            defer {
-                for (patches.items) |*patch| {
-                    patch.deinit();
-                }
-                patches.deinit();
-            }
+        const patches = try self.calculatePatches();
+        for (patches.items) |patch| {
+            try patch.apply(buffered_writer);
         }
-
-        if (self.render_mode != .PixelsOnly) {
-            try self.text_layer.render(buffered_writer);
+        defer {
+            for (patches.items) |*patch| {
+                patch.deinit();
+            }
+            patches.deinit();
         }
 
         try buffered_writer.print("\x1B[{d};{d}H\x1B[?25h", .{ self.height / 2 + 1, self.width + 1 });
 
         try stdout.writeAll(buffer.items);
-        @memcpy(self.previous_buffer, self.buffer);
-    }
 
-    pub fn clear(self: *TerminalCanvas) void {
-        @memset(self.buffer, Color.fromRgb(0, 0, 0));
+        @memcpy(self.previous_buffer, self.buffer);
+        for (self.previous_text_entries.items) |*entry| {
+            entry.deinit(self.allocator);
+        }
+        self.previous_text_entries.clearRetainingCapacity();
+
+        for (self.text_entries.items) |*entry| {
+            const cloned_entry = try entry.clone(self.allocator);
+            try self.previous_text_entries.append(cloned_entry);
+        }
+
+        for (self.text_entries.items) |*entry| {
+            entry.deinit(self.allocator);
+        }
+        self.text_entries.clearRetainingCapacity();
     }
 
     pub fn enterAlternateScreen() !void {

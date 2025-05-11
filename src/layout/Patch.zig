@@ -1,7 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
-
 const Color = @import("Color.zig").Color;
 
 pub const Patch = struct {
@@ -9,13 +8,44 @@ pub const Patch = struct {
     y: u16,
     data: std.ArrayList(u8),
     previous_colors: ?struct { upper: Color, lower: Color } = null,
+    is_text: bool = false,
 
     pub fn init(allocator: Allocator, x: u16, y: u16) Patch {
         return .{
             .x = x,
             .y = y,
             .data = std.ArrayList(u8).init(allocator),
+            .is_text = false,
         };
+    }
+
+    pub fn initForText(
+        allocator: Allocator,
+        x: u16,
+        y: u16,
+        text: []const u8,
+        fg: Color,
+        bg: ?Color,
+    ) !Patch {
+        var patch = Patch{
+            .x = x,
+            .y = y,
+            .data = std.ArrayList(u8).init(allocator),
+            .is_text = true,
+        };
+
+        var writer = patch.data.writer();
+
+        try writer.print("\x1B[38;2;{d};{d};{d}m", .{ fg.r, fg.g, fg.b });
+
+        if (bg) |background| {
+            try writer.print("\x1B[48;2;{d};{d};{d}m", .{ background.r, background.g, background.b });
+        }
+
+        try patch.data.appendSlice(text);
+        try patch.data.appendSlice("\x1B[0m");
+
+        return patch;
     }
 
     pub fn deinit(self: *Patch) void {

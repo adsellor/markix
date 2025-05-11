@@ -1,8 +1,8 @@
 const std = @import("std");
 const io = std.io;
-const terminal_utils = @import("../utils/terminal.zig");
-const TerminalSize = @import("../utils/terminal.zig").TerminalSize;
-const TerminalCanvas = @import("./Canvas.zig").TerminalCanvas;
+const terminal_utils = @import("terminal.zig");
+const TerminalSize = @import("terminal.zig").TerminalSize;
+const TerminalCanvas = @import("../layout/Canvas.zig").TerminalCanvas;
 const posix = std.posix;
 
 pub const EventType = enum {
@@ -36,7 +36,12 @@ pub fn readEvent(reader: anytype) !Event {
     return Event{ .Key = buf[0] };
 }
 
-pub fn runEventLoop(canvas: *TerminalCanvas, comptime ContextType: type, context: *ContextType, comptime callback: fn (*ContextType, Event) bool) !void {
+pub fn runEventLoop(
+    canvas: *TerminalCanvas,
+    comptime ContextType: type,
+    context: *ContextType,
+    comptime callback: fn (*ContextType, Event) bool,
+) !void {
     const stdin = io.getStdIn().reader();
     const original_termios = try terminal_utils.enableRawMode();
     defer terminal_utils.disableRawMode(original_termios) catch {};
