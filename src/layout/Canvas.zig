@@ -1,13 +1,17 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
 const Color = @import("Color.zig").Color;
 const Patch = @import("Patch.zig").Patch;
+const TextLayer = @import("TextLayer.zig").TextLayer;
+
+const terminal_utils = @import("../utils/terminal.zig");
+
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const io = std.io;
 const time = std.time;
 const posix = std.posix;
-const terminal_utils = @import("../utils/terminal.zig");
-const TextLayer = @import("TextLayer.zig").TextLayer;
 
 pub const TerminalCanvas = struct {
     width: u32,
@@ -241,17 +245,19 @@ pub const TerminalSize = struct {
 
 pub fn getTerminalSize() !TerminalSize {
     const STDOUT_FILENO = 1;
-
     const winsize = extern struct {
         ws_row: u16,
         ws_col: u16,
         ws_xpixel: u16,
         ws_ypixel: u16,
     };
-
     var ws: winsize = undefined;
-    //NOTE: This probably won't work on windows, but do I need that ?
-    const TIOCGWINSZ: u32 = 0x5413;
+
+    const TIOCGWINSZ: u32 = switch (builtin.os.tag) {
+        .linux => 0x5413,
+        .macos, .freebsd, .netbsd, .openbsd, .dragonfly => 0x40087468,
+        else => @compileError("Unsupported OS"),
+    };
 
     const result = posix.system.ioctl(STDOUT_FILENO, TIOCGWINSZ, @intFromPtr(&ws));
     if (result < 0) {
