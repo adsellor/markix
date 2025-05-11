@@ -90,6 +90,7 @@ pub const TerminalCanvas = struct {
 
     fn calculatePatches(self: *const TerminalCanvas) !std.ArrayList(Patch) {
         var patches = std.ArrayList(Patch).init(self.allocator);
+
         var active_patch: ?Patch = null;
 
         var y: usize = 0;
@@ -210,6 +211,12 @@ pub const TerminalCanvas = struct {
             const patches = try self.calculatePatches();
             for (patches.items) |patch| {
                 try patch.apply(buffered_writer);
+            }
+            defer {
+                for (patches.items) |*patch| {
+                    patch.deinit();
+                }
+                patches.deinit();
             }
         }
 
