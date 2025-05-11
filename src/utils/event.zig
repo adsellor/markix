@@ -9,12 +9,14 @@ pub const EventType = enum {
     Key,
     Resize,
     Unknown,
+    Frame,
 };
 
 pub const Event = union(EventType) {
     Key: u8,
     Resize: TerminalSize,
     Unknown: void,
+    Frame: void,
 };
 
 pub fn readEvent(reader: anytype) !Event {
@@ -43,11 +45,12 @@ pub fn runEventLoop(
     comptime callback: fn (*ContextType, Event) bool,
 ) !void {
     const stdin = io.getStdIn().reader();
+
     const original_termios = try terminal_utils.enableRawMode();
     defer terminal_utils.disableRawMode(original_termios) catch {};
 
-    try canvas.enterAlternateScreen();
-    defer canvas.exitAlternateScreen() catch {};
+    try TerminalCanvas.enterAlternateScreen();
+    defer TerminalCanvas.exitAlternateScreen() catch {};
 
     canvas.last_loop_width = canvas.width;
     canvas.last_loop_height = canvas.height;
@@ -64,14 +67,18 @@ pub fn runEventLoop(
         var pollfds = [_]posix.pollfd{
             .{ .fd = 0, .events = posix.POLL.IN, .revents = 0 },
         };
-
-        const poll_result = posix.poll(&pollfds, 0);
-
+        const poll_result = try posix.poll(&pollfds, 0);
         if (poll_result > 0 and (pollfds[0].revents & posix.POLL.IN) != 0) {
-            const event = try readEvent(stdin);
-            const should_continue = callback(context, event);
+            const e = try readEvent(stdin);
+            const should_continue = callback(context, e);
             if (!should_continue) break;
         }
+
+        // NOTE: This is a dummy event
+        // We will use proper callback and event handling later
+        // Maybe this can be tied to signals implementation idk
+        const should_continue = callback(context, Event{ .Frame = {} });
+        if (!should_continue) break;
 
         try canvas.render();
     }
