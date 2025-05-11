@@ -2,6 +2,7 @@ const std = @import("std");
 const mem = std.mem;
 const Color = @import("layout/Color.zig").Color;
 const terminal = @import("layout/Canvas.zig");
+const event = @import("layout/event.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -17,9 +18,15 @@ pub fn main() !void {
     canvas.setRefreshLimit(120);
 
     const white = Color.fromRgb(255, 255, 255);
-    const bg_color = Color.fromRgb(10, 10, 40);
+    const bg_color = Color.fromRgb(10, 10, 10);
 
     var frame_count: u32 = 0;
+
+    for (0..canvas.width) |x| {
+        for (0..canvas.height) |y| {
+            canvas.setPixel(@intCast(x), @intCast(y), bg_color);
+        }
+    }
 
     while (true) {
         var pollfds = [_]std.posix.pollfd{
@@ -29,20 +36,14 @@ pub fn main() !void {
         const poll_result = try std.posix.poll(&pollfds, 0);
 
         if (poll_result > 0 and (pollfds[0].revents & std.posix.POLL.IN) != 0) {
-            const event = try terminal.readEvent(std.io.getStdIn().reader());
-            if (event == .Key and event.Key == 'q') {
+            const target = try event.readEvent(std.io.getStdIn().reader());
+            if (target == .Key and target.Key == 'q') {
                 break;
             }
         }
 
-        canvas.clear();
         canvas.clearText();
-
-        for (0..canvas.width) |x| {
-            for (0..canvas.height) |y| {
-                canvas.setPixel(@intCast(x), @intCast(y), bg_color);
-            }
-        }
+        canvas.clear();
 
         const wave_y = 70;
 
@@ -69,8 +70,8 @@ pub fn main() !void {
         const fps_text = try std.fmt.bufPrint(&fps_buf, "Target FPS: {d}", .{120});
         try canvas.addText(@intCast(canvas.width - 30), 1, fps_text, white, bg_color);
 
-        try canvas.render();
-
         frame_count += 1;
+
+        try canvas.render();
     }
 }

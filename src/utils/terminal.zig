@@ -2,6 +2,11 @@ const std = @import("std");
 const posix = std.posix;
 const builtin = @import("builtin");
 
+pub const TerminalSize = struct {
+    width: u32,
+    height: u32,
+};
+
 pub fn enableRawMode() !posix.termios {
     const STDIN_FILENO = 0;
 
@@ -40,4 +45,31 @@ pub fn readKey(reader: anytype) !u8 {
     var buffer: [1]u8 = undefined;
     _ = try reader.read(&buffer);
     return buffer[0];
+}
+
+pub fn getTerminalSize() !TerminalSize {
+    const STDOUT_FILENO = 1;
+    const winsize = extern struct {
+        ws_row: u16,
+        ws_col: u16,
+        ws_xpixel: u16,
+        ws_ypixel: u16,
+    };
+    var ws: winsize = undefined;
+
+    const TIOCGWINSZ: u32 = switch (builtin.os.tag) {
+        .linux => 0x5413,
+        .macos, .freebsd, .netbsd, .openbsd, .dragonfly => 0x40087468,
+        else => @compileError("Unsupported OS"),
+    };
+
+    const result = posix.system.ioctl(STDOUT_FILENO, TIOCGWINSZ, @intFromPtr(&ws));
+    if (result < 0) {
+        return error.TerminalSizeQueryFailed;
+    }
+
+    return TerminalSize{
+        .width = @as(u32, ws.ws_col),
+        .height = @as(u32, ws.ws_row),
+    };
 }

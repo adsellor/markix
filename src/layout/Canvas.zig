@@ -11,7 +11,6 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 const io = std.io;
 const time = std.time;
-const posix = std.posix;
 
 pub const TerminalCanvas = struct {
     width: u32,
@@ -47,7 +46,7 @@ pub const TerminalCanvas = struct {
     }
 
     pub fn initAutoSize(allocator: Allocator) !TerminalCanvas {
-        const size = try getTerminalSize();
+        const size = try terminal_utils.getTerminalSize();
         var canvas = try TerminalCanvas.init(allocator, size.width, size.height * 2);
         canvas.resizable = true;
         return canvas;
@@ -244,102 +243,3 @@ pub const TerminalCanvas = struct {
         try stdout.writeAll("\x1B[?1049l");
     }
 };
-
-pub const TerminalSize = struct {
-    width: u32,
-    height: u32,
-};
-
-pub fn getTerminalSize() !TerminalSize {
-    const STDOUT_FILENO = 1;
-    const winsize = extern struct {
-        ws_row: u16,
-        ws_col: u16,
-        ws_xpixel: u16,
-        ws_ypixel: u16,
-    };
-    var ws: winsize = undefined;
-
-    const TIOCGWINSZ: u32 = switch (builtin.os.tag) {
-        .linux => 0x5413,
-        .macos, .freebsd, .netbsd, .openbsd, .dragonfly => 0x40087468,
-        else => @compileError("Unsupported OS"),
-    };
-
-    const result = posix.system.ioctl(STDOUT_FILENO, TIOCGWINSZ, @intFromPtr(&ws));
-    if (result < 0) {
-        return error.TerminalSizeQueryFailed;
-    }
-
-    return TerminalSize{
-        .width = @as(u32, ws.ws_col),
-        .height = @as(u32, ws.ws_row),
-    };
-}
-
-pub const EventType = enum {
-    Key,
-    Resize,
-    Unknown,
-};
-
-pub const Event = union(EventType) {
-    Key: u8,
-    Resize: TerminalSize,
-    Unknown: void,
-};
-
-pub fn readEvent(reader: anytype) !Event {
-    var buf: [16]u8 = undefined;
-
-    const bytes_read = try reader.read(buf[0..1]);
-    if (bytes_read == 0) return Event.Unknown;
-
-    if (buf[0] == 0x1B) {
-        const more_bytes = try reader.read(buf[1..3]);
-        if (more_bytes == 0) return Event{ .Key = buf[0] };
-
-        // TODO: Read for resize and adjust accordingly
-        // Will think about it when I finalize the layout engine
-        // For now just return the escape key
-        return Event{ .Key = buf[0] };
-    }
-
-    return Event{ .Key = buf[0] };
-}
-
-pub fn runEventLoop(canvas: *TerminalCanvas, comptime ContextType: type, context: *ContextType, comptime callback: fn (*ContextType, Event) bool) !void {
-    const stdin = io.getStdIn().reader();
-    const original_termios = try terminal_utils.enableRawMode();
-    defer terminal_utils.disableRawMode(original_termios) catch {};
-
-    try canvas.enterAlternateScreen();
-    defer canvas.exitAlternateScreen() catch {};
-
-    canvas.last_loop_width = canvas.width;
-    canvas.last_loop_height = canvas.height;
-
-    while (true) {
-        if (canvas.resizable) {
-            const term_size = try getTerminalSize();
-            if (term_size.width != canvas.width or term_size.height * 2 != canvas.height) {
-                try canvas.resize(term_size.width, term_size.height * 2);
-                _ = callback(context, Event{ .Resize = term_size });
-            }
-        }
-
-        var pollfds = [_]posix.pollfd{
-            .{ .fd = 0, .events = posix.POLL.IN, .revents = 0 },
-        };
-
-        const poll_result = posix.poll(&pollfds, 0);
-
-        if (poll_result > 0 and (pollfds[0].revents & posix.POLL.IN) != 0) {
-            const event = try readEvent(stdin);
-            const should_continue = callback(context, event);
-            if (!should_continue) break;
-        }
-
-        try canvas.render();
-    }
-}
