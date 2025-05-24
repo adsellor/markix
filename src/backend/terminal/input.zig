@@ -1,11 +1,12 @@
 const std = @import("std");
 const limits = @import("limits.zig");
-const framework_input = @import("../../framework/input.zig");
-pub const Key = framework_input.Key;
-pub const Pointer = framework_input.Pointer;
+const utils_input = @import("../../utils/input.zig");
+pub const Key = utils_input.Key;
+pub const Pointer = utils_input.Pointer;
+pub const PointerButton = utils_input.PointerButton;
 
 const ParsedPointer = struct {
-    pointer: framework_input.Pointer,
+    pointer: utils_input.Pointer,
     consumed: usize,
 };
 
@@ -50,6 +51,8 @@ fn parse_byte(byte: u8) Key {
 
 fn parse_escape(bytes: []const u8, batch: *Batch) !usize {
     std.debug.assert(bytes.len > 0);
+    std.debug.assert(batch.count <= batch.keys.len);
+    std.debug.assert(bytes.len > 0);
     if (bytes.len == 1 or bytes[1] != '[') {
         try batch.append(.escape);
         return 1;
@@ -84,6 +87,8 @@ fn parse_escape(bytes: []const u8, batch: *Batch) !usize {
 }
 
 fn parse_pointer(bytes: []const u8) ?ParsedPointer {
+    std.debug.assert(bytes.len > 0);
+    std.debug.assert(bytes.len <= std.math.maxInt(u16));
     if (bytes.len < 9) return null;
     if (bytes[0] != 0x1b) return null;
     if (bytes[1] != '[') return null;
@@ -127,14 +132,14 @@ fn parse_number(bytes: []const u8, cursor: *usize) ?u16 {
     return @intCast(value);
 }
 
-fn pointer_action(code: u16, final: u8) framework_input.PointerAction {
+fn pointer_action(code: u16, final: u8) utils_input.PointerAction {
     if (final == 'm') return .release;
     if (code & 3 == 3) return .release;
     if (code & 32 != 0) return .drag;
     return .press;
 }
 
-fn pointer_button(code: u16, final: u8) framework_input.PointerButton {
+fn pointer_button(code: u16, final: u8) utils_input.PointerButton {
     if (final == 'm' or code & 3 == 3) return .none;
     if (code & 64 != 0) {
         return if (code & 1 == 0) .wheel_up else .wheel_down;

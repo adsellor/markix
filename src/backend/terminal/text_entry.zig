@@ -1,7 +1,7 @@
 const std = @import("std");
 const limits = @import("limits.zig");
-const Color = @import("../../framework/layout/color.zig").Color;
-const Attributes = @import("text_style.zig").Attributes;
+const Color = @import("../../style/color.zig").Color;
+const Attributes = @import("../../style/text_style.zig").Attributes;
 
 pub const TextEntry = struct {
     x: u16,

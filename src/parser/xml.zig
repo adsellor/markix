@@ -47,6 +47,8 @@ pub fn find_close_tag(
 }
 
 pub fn attribute_value(tag: []const u8, name: []const u8) ?[]const u8 {
+    std.debug.assert(name.len > 0);
+    std.debug.assert(tag.len <= std.math.maxInt(u32));
     var cursor: usize = 0;
     while (find_ignore_case_from(tag, name, cursor)) |start| {
         var index = start + name.len;

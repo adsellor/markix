@@ -45,6 +45,8 @@ pub fn prepare(
     options: Options,
     bitmap_buffer: []u8,
 ) !u32 {
+    std.debug.assert(options.path.len > 0);
+    std.debug.assert(bitmap_buffer.len > 0);
     std.debug.assert(bitmap_buffer.len >= limits.sixel_bitmap_bytes_max);
     const width = std.math.mul(u16, options.width_cells, cell_pixel_width) catch
         return error.SixelImageTooWide;
@@ -87,6 +89,8 @@ fn ensure_bitmap(
     width: u16,
     height: u16,
 ) !void {
+    std.debug.assert(width > 0);
+    std.debug.assert(height > 0);
     if (bitmap_matches(io, bitmap_path, width, height)) return;
     var width_buffer: [16]u8 = undefined;
     var height_buffer: [16]u8 = undefined;
@@ -132,6 +136,8 @@ fn read_bitmap(
     path: []const u8,
     buffer: []u8,
 ) ![]const u8 {
+    std.debug.assert(path.len > 0);
+    std.debug.assert(buffer.len > 0);
     std.debug.assert(buffer.len >= limits.sixel_bitmap_bytes_max);
     var file = try std.Io.Dir.openFileAbsolute(io, path, .{});
     defer file.close(io);
@@ -146,6 +152,8 @@ fn read_bitmap(
 }
 
 fn parse_bitmap(bytes: []const u8, expected_width: u16, expected_height: u16) !Bitmap {
+    std.debug.assert(expected_width > 0);
+    std.debug.assert(expected_height > 0);
     if (bytes.len < 54 or !std.mem.eql(u8, bytes[0..2], "BM")) {
         return error.InvalidSixelBitmap;
     }
@@ -178,6 +186,8 @@ fn parse_bitmap(bytes: []const u8, expected_width: u16, expected_height: u16) !B
 }
 
 fn encode(writer: *std.Io.Writer, bitmap: Bitmap, options: Options) !void {
+    std.debug.assert(bitmap.width > 0);
+    std.debug.assert(bitmap.height > 0);
     const crop_start = scaled_row(
         bitmap.height,
         options.crop_top_rows,
@@ -218,6 +228,8 @@ fn write_band(
     band_start: u16,
     crop_end: u16,
 ) !void {
+    std.debug.assert(bitmap.width > 0);
+    std.debug.assert(band_start < bitmap.height or bitmap.height == 0);
     var color: u8 = 0;
     while (color < palette_size) : (color += 1) {
         try writer.print("#{d}", .{color});
@@ -245,6 +257,8 @@ fn sixel_value(
     crop_end: u16,
     color: u8,
 ) u8 {
+    std.debug.assert(x < bitmap.width or bitmap.width == 0);
+    std.debug.assert(color < palette_size);
     var bits: u8 = 0;
     var offset: u8 = 0;
     while (offset < 6) : (offset += 1) {

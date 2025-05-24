@@ -20,6 +20,7 @@ pub const image_chunk_encoded_bytes: u16 =
 pub const image_chunk_output_bytes_max: u16 = image_chunk_encoded_bytes + 256;
 pub const sixel_bitmap_bytes_max: u32 = 2 * 1_024 * 1_024;
 pub const sixel_output_bytes_max: u32 = 2 * 1_024 * 1_024;
+pub const web_rects_max: u16 = 512;
 pub const text_bytes_max: u16 = 512;
 pub const text_entries_max: u16 = 1_024;
 pub const selection_regions_max: u8 = 16;
@@ -48,6 +49,7 @@ comptime {
     std.debug.assert(text_bytes_max <= canvas_width_max);
     std.debug.assert(text_entries_max < std.math.maxInt(u16));
     std.debug.assert(text_positions_max >= text_entries_max);
+    std.debug.assert(web_rects_max > 0);
     std.debug.assert(selection_regions_max > 0);
     std.debug.assert(selection_bytes_max >= text_bytes_max);
     std.debug.assert(selection_encoded_bytes_max > selection_bytes_max);

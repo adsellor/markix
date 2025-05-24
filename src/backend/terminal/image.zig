@@ -27,6 +27,8 @@ pub const Placement = struct {
         full_height_rows: u16,
         path: []const u8,
     ) !Placement {
+        std.debug.assert(width > 0);
+        std.debug.assert(height > 0);
         if (path.len == 0 or path.len > limits.image_path_bytes_max) {
             return error.InvalidImagePath;
         }
@@ -93,6 +95,8 @@ pub fn display(
     sixel_scratch: sixel.Scratch,
     sixel_bitmap_length: u32,
 ) !void {
+    std.debug.assert(placement.width > 0 or placement.height == 0);
+    std.debug.assert(placement.path_length <= placement.path.len);
     switch (placement.protocol) {
         .none => {},
         .kitty => {
@@ -121,6 +125,8 @@ pub fn prepare_sixel(
     placement: *const Placement,
     bitmap_buffer: []u8,
 ) !u32 {
+    std.debug.assert(placement.width > 0);
+    std.debug.assert(placement.height > 0);
     if (placement.protocol != .sixel) return error.InvalidImageProtocol;
     return sixel.prepare(
         io,
@@ -138,6 +144,8 @@ pub fn prepare_sixel(
 }
 
 fn upload_kitty(io: std.Io, placement: *const Placement) !void {
+    std.debug.assert(placement.path_length > 0);
+    std.debug.assert(placement.id > 0);
     var file = try std.Io.Dir.openFileAbsolute(io, placement.path_bytes(), .{});
     defer file.close(io);
     const stat = try file.stat(io);
@@ -170,6 +178,8 @@ fn write_chunk(
     first: bool,
     more: bool,
 ) !void {
+    std.debug.assert(source.len > 0);
+    std.debug.assert(image_id > 0);
     var output: [limits.image_chunk_output_bytes_max]u8 = undefined;
     var writer = std.Io.Writer.fixed(&output);
     var encoded: [limits.image_chunk_encoded_bytes]u8 = undefined;
@@ -188,6 +198,8 @@ fn write_chunk(
 }
 
 fn place_kitty(io: std.Io, placement: *const Placement) !void {
+    std.debug.assert(placement.protocol == .kitty);
+    std.debug.assert(placement.id > 0);
     const dimensions = try png_dimensions(io, placement.path_bytes());
     const crop_y = scaled_row(
         dimensions.height,

@@ -10,6 +10,10 @@
       url = "github:edolstra/flake-compat";
       flake = false;
     };
+    zls = {
+      url = "github:zigtools/zls/master";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
@@ -33,6 +37,7 @@
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
             zigpkgs.master
+            zls
           ];
         };
 

@@ -1,61 +1,52 @@
 const std = @import("std");
 
-pub fn build(build_context: *std.Build) void {
-    const target = build_context.standardTargetOptions(.{});
-    const optimize = build_context.standardOptimizeOption(.{});
-    const module = build_context.createModule(.{
-        .root_source_file = build_context.path("src/main.zig"),
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    const root_module = b.addModule("markix", .{
+        .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const executable = build_context.addExecutable(.{
+    const lib = b.addLibrary(.{
         .name = "markix",
-        .root_module = module,
+        .root_module = root_module,
     });
-    build_context.installArtifact(executable);
+    b.installArtifact(lib);
 
-    const rss_module = build_context.createModule(.{
-        .root_source_file = build_context.path("src/rss_main.zig"),
+    const test_module = b.createModule(.{
+        .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
     });
-    const rss_executable = build_context.addExecutable(.{
-        .name = "markix-rss",
-        .root_module = rss_module,
-    });
-    build_context.installArtifact(rss_executable);
-
-    const run_command = build_context.addRunArtifact(executable);
-    run_command.step.dependOn(build_context.getInstallStep());
-    const run_step = build_context.step("run", "Run markix");
-    run_step.dependOn(&run_command.step);
-
-    const run_rss_command = build_context.addRunArtifact(rss_executable);
-    run_rss_command.step.dependOn(build_context.getInstallStep());
-    const run_rss_step = build_context.step("run-rss", "Run the Markix RSS reader");
-    run_rss_step.dependOn(&run_rss_command.step);
-
-    const test_module = build_context.createModule(.{
-        .root_source_file = build_context.path("src/tests.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const unit_tests = build_context.addTest(.{ .root_module = test_module });
-    const run_unit_tests = build_context.addRunArtifact(unit_tests);
-    const test_step = build_context.step("test", "Run unit tests");
+    const unit_tests = b.addTest(.{ .root_module = test_module });
+    const run_unit_tests = b.addRunArtifact(unit_tests);
+    const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
 
-    const format_check = build_context.addFmt(.{
+    // What a frame costs. Release only: a debug build measures the assertions
+    // rather than the work, and the numbers would say nothing.
+    const bench_module = b.createModule(.{
+        .root_source_file = b.path("src/bench.zig"),
+        .target = target,
+        .optimize = .ReleaseFast,
+    });
+    const bench_exe = b.addExecutable(.{ .name = "bench", .root_module = bench_module });
+    const run_bench = b.addRunArtifact(bench_exe);
+    const bench_step = b.step("bench", "Measure layout, repaint and frame generation");
+    bench_step.dependOn(&run_bench.step);
+
+    const format_check = b.addFmt(.{
         .paths = &.{
-            build_context.path("build.zig"),
-            build_context.path("src"),
+            b.path("build.zig"),
+            b.path("src"),
         },
         .check = true,
     });
-    const check_step = build_context.step("check", "Compile, test, and check formatting");
-    check_step.dependOn(&executable.step);
-    check_step.dependOn(&rss_executable.step);
+    const check_step = b.step("check", "Compile, test, and check formatting");
+    check_step.dependOn(&lib.step);
     check_step.dependOn(&run_unit_tests.step);
     check_step.dependOn(&format_check.step);
 }

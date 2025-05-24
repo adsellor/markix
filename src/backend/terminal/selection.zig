@@ -1,9 +1,9 @@
 const std = @import("std");
 const limits = @import("limits.zig");
-const Color = @import("../../framework/layout/color.zig").Color;
-const Pointer = @import("../../framework/input.zig").Pointer;
-const Rect = @import("../../framework/layout/rect.zig").Rect;
-const TextSelectionStyle = @import("../../framework/style.zig").TextSelectionStyle;
+const Color = @import("../../style/color.zig").Color;
+const Pointer = @import("../../utils/input.zig").Pointer;
+const Rect = @import("../../layout/rect.zig").Rect;
+const TextSelectionStyle = @import("../../style/style.zig").TextSelectionStyle;
 const TextEntry = @import("text_entry.zig").TextEntry;
 
 const Allocator = std.mem.Allocator;
@@ -52,6 +52,8 @@ pub const Engine = struct {
     encoded_buffer: []u8,
 
     pub fn init(allocator: Allocator) !Engine {
+        std.debug.assert(limits.selection_regions_max > 0);
+        std.debug.assert(limits.selection_regions_max <= std.math.maxInt(u8));
         const text_cells = try allocator.alloc(u16, limits.text_positions_max);
         errdefer allocator.free(text_cells);
         const text_buffer = try allocator.alloc(u8, limits.selection_bytes_max);
@@ -84,6 +86,8 @@ pub const Engine = struct {
         rect: Rect,
         style: TextSelectionStyle,
     ) !void {
+        std.debug.assert(self.regions_count <= limits.selection_regions_max);
+        std.debug.assert(rect.width > 0 or rect.height == 0);
         if (rect.width == 0 or rect.height == 0) return;
         if (self.pending_regions_count >= limits.selection_regions_max) {
             return error.TooManySelectionRegions;
@@ -104,6 +108,8 @@ pub const Engine = struct {
     }
 
     fn handle_press(self: *Engine, pointer: Pointer) Action {
+        std.debug.assert(self.regions_count <= limits.selection_regions_max);
+        std.debug.assert(pointer.action == .press);
         if (pointer.button != .primary) return .ignored;
         const region = self.region_at(pointer.x, pointer.y) orelse {
             if (self.selection == null) return .ignored;
@@ -156,7 +162,21 @@ pub const Engine = struct {
         return self.selection != null;
     }
 
+    pub fn region_count(self: *const Engine) u8 {
+        return self.regions_count;
+    }
+
+    pub fn region_rect(self: *const Engine, index: u8) Rect {
+        return self.regions[index].rect;
+    }
+
+    pub fn region_style(self: *const Engine, index: u8) TextSelectionStyle {
+        return self.regions[index].style;
+    }
+
     pub fn cell_style(self: *const Engine, x: u16, y: u16) ?CellStyle {
+        std.debug.assert(self.regions_count <= limits.selection_regions_max);
+        std.debug.assert(self.pending_regions_count <= limits.selection_regions_max);
         const selected = self.selection orelse return null;
         if (!selection_contains(selected, x, y)) return null;
         const style = selected.region.style;
@@ -200,6 +220,8 @@ pub const Engine = struct {
         entries: []const TextEntry,
         previous_entries: []const TextEntry,
     ) void {
+        std.debug.assert(self.regions_count <= limits.selection_regions_max);
+        std.debug.assert(self.pending_regions_count <= limits.selection_regions_max);
         update_text_cells(self.text_cells, previous_entries, cell_empty);
         update_text_cells(self.text_cells, entries, null);
         self.regions_count = self.pending_regions_count;
@@ -233,6 +255,8 @@ pub const Engine = struct {
     }
 
     fn selected_text(self: *Engine) []const u8 {
+        std.debug.assert(self.pending_regions_count <= limits.selection_regions_max);
+        std.debug.assert(self.regions_count <= limits.selection_regions_max);
         const selected = self.selection orelse return self.text_buffer[0..0];
         const ordered = ordered_points(selected);
         var length: usize = 0;

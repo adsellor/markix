@@ -1,5 +1,7 @@
 const std = @import("std");
 const input = @import("input.zig");
+const PointerButton = input.PointerButton;
+const Key = input.Key;
 const limits = @import("limits.zig");
 const terminal = @import("terminal.zig");
 const TerminalCanvas = @import("canvas.zig").TerminalCanvas;
@@ -36,6 +38,8 @@ pub fn run_event_loop(
     context: *Context,
     comptime callback: fn (*Context, Event) anyerror!LoopAction,
 ) !void {
+    std.debug.assert(canvas.width > 0);
+    std.debug.assert(canvas.height > 0);
     if (options.resize_poll_ms == 0) return error.InvalidResizePollPeriod;
     const original_terminal = try terminal.enable_raw_mode();
     defer terminal.disable_raw_mode(original_terminal) catch |err| {
@@ -50,6 +54,7 @@ pub fn run_event_loop(
     if (try callback(context, .{ .frame = {} }) == .stop) return;
     try canvas.render(io);
     var running = true;
+    var wheel_coalescer = WheelCoalescer{};
     while (running) {
         const previous_width = canvas.width;
         const previous_height = canvas.height;
@@ -57,20 +62,22 @@ pub fn run_event_loop(
             const resize_action = try resize_if_needed(canvas, context, callback);
             if (resize_action == .stop) break;
         }
-        const resized = previous_width != canvas.width or
-            previous_height != canvas.height;
+        const resized = previous_width != canvas.width or previous_height != canvas.height;
         if (resized) {
             running = try redraw(canvas, io, context, callback);
             continue;
         }
-        const timeout_ms = if (options.continuous_frames)
+        const timeout_ms: i32 = if (options.continuous_frames)
             canvas.frame_timeout_ms()
         else
-            @as(i32, options.resize_poll_ms);
+            options.resize_poll_ms;
         var action: LoopAction = .wait;
         if (try input_ready(timeout_ms)) {
             const batch = try read_input();
+            // One wheel notch can arrive as several SGR presses, even across reads.
+            const now_ns = std.Io.Timestamp.now(io, .awake).nanoseconds;
             for (batch.items()) |key| {
+                if (!wheel_coalescer.shouldDispatch(key, now_ns)) continue;
                 const next_action = try dispatch_input(
                     canvas,
                     io,
@@ -122,6 +129,8 @@ fn dispatch_pointer(
     key: input.Key,
     pointer: input.Pointer,
 ) !LoopAction {
+    std.debug.assert(pointer.x <= std.math.maxInt(u16));
+    std.debug.assert(pointer.y <= std.math.maxInt(u16));
     var action: LoopAction = switch (canvas.handle_pointer(pointer)) {
         .ignored => .wait,
         .redraw => .redraw,
@@ -170,6 +179,8 @@ fn redraw(
 }
 
 fn input_ready(timeout_ms: i32) !bool {
+    std.debug.assert(timeout_ms >= -1);
+    std.debug.assert(posix.STDIN_FILENO >= 0);
     std.debug.assert(timeout_ms > 0);
     var descriptors = [_]posix.pollfd{.{
         .fd = posix.STDIN_FILENO,
@@ -183,4 +194,71 @@ fn input_ready(timeout_ms: i32) !bool {
     if (events & posix.POLL.ERR != 0) return error.InputError;
     if (events & posix.POLL.HUP != 0) return error.EndOfInput;
     return events & posix.POLL.IN != 0;
+}
+
+/// Collapses the back-to-back SGR wheel presses a terminal writes for one
+/// wheel notch into a single dispatch. Ghostty multiplies a single notch into
+/// several wheel events written back-to-back (and high-resolution mice do the
+/// same), sometimes spanning more than one read. Same-direction presses that
+/// land within the burst window of the last dispatched press are one gesture;
+/// a reverse direction or a fresh burst starts over.
+const WheelCoalescer = struct {
+    /// Ghostty writes the presses for one notch back-to-back (microseconds
+    /// apart), while two genuine notches of a fast flick arrive 20-40ms
+    /// apart, so a 30ms window separates one notch from the next.
+    burst_window_ns: u64 = 30 * std.time.ns_per_ms,
+
+    last_wheel: ?struct { button: PointerButton, ns: u64 } = null,
+
+    fn shouldDispatch(self: *WheelCoalescer, key: Key, now_ns: i96) bool {
+        std.debug.assert(now_ns >= 0);
+        const now: u64 = @intCast(now_ns);
+        const wheel: ?PointerButton = switch (key) {
+            .pointer => |pointer| if (pointer.action == .press and
+                (pointer.button == .wheel_up or pointer.button == .wheel_down))
+                pointer.button
+            else
+                null,
+            else => null,
+        };
+        if (wheel) |button| {
+            std.debug.assert(button == .wheel_up or button == .wheel_down);
+            const same_burst = if (self.last_wheel) |last|
+                last.button == button and now - last.ns < self.burst_window_ns
+            else
+                false;
+            if (!same_burst) self.last_wheel = .{ .button = button, .ns = now };
+            return !same_burst;
+        }
+        self.last_wheel = null;
+        return true;
+    }
+};
+
+test "wheel presses in one burst coalesce but reverse direction dispatches" {
+    var coalescer = WheelCoalescer{};
+    const down = Key{ .pointer = .{ .x = 1, .y = 1, .action = .press, .button = .wheel_down } };
+    const up = Key{ .pointer = .{ .x = 1, .y = 1, .action = .press, .button = .wheel_up } };
+    try std.testing.expect(coalescer.shouldDispatch(down, 0));
+    try std.testing.expect(!coalescer.shouldDispatch(down, 1));
+    try std.testing.expect(!coalescer.shouldDispatch(down, 2));
+    try std.testing.expect(coalescer.shouldDispatch(up, 3));
+    try std.testing.expect(!coalescer.shouldDispatch(up, 4));
+    try std.testing.expect(coalescer.shouldDispatch(down, 5));
+}
+
+test "wheel presses outside the burst window dispatch separately" {
+    var coalescer = WheelCoalescer{};
+    const down = Key{ .pointer = .{ .x = 1, .y = 1, .action = .press, .button = .wheel_down } };
+    try std.testing.expect(coalescer.shouldDispatch(down, 0));
+    try std.testing.expect(coalescer.shouldDispatch(down, 31 * std.time.ns_per_ms));
+    try std.testing.expect(!coalescer.shouldDispatch(down, 31 * std.time.ns_per_ms + 1));
+}
+
+test "a non-wheel key resets the wheel burst" {
+    var coalescer = WheelCoalescer{};
+    const down = Key{ .pointer = .{ .x = 1, .y = 1, .action = .press, .button = .wheel_down } };
+    _ = coalescer.shouldDispatch(down, 0);
+    try std.testing.expect(coalescer.shouldDispatch(Key{ .character = 'a' }, 1));
+    try std.testing.expect(coalescer.shouldDispatch(down, 2));
 }

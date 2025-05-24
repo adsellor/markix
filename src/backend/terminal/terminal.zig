@@ -11,6 +11,8 @@ pub const TerminalSize = struct {
 };
 
 pub fn enable_raw_mode() !posix.termios {
+    std.debug.assert(posix.STDIN_FILENO >= 0);
+    std.debug.assert(@sizeOf(posix.termios) > 0);
     const original = try posix.tcgetattr(stdin_file_descriptor);
     var raw = original;
 
@@ -37,6 +39,8 @@ pub fn disable_raw_mode(original: posix.termios) !void {
 }
 
 pub fn get_terminal_size() !TerminalSize {
+    std.debug.assert(@sizeOf(TerminalSize) > 0);
+    std.debug.assert(posix.STDOUT_FILENO >= 0);
     const WindowSize = extern struct {
         row: u16,
         column: u16,
@@ -80,6 +84,8 @@ pub fn query_graphics_capabilities(io: std.Io) !GraphicsCapabilities {
 }
 
 fn collect_query_responses(response: []u8) !usize {
+    std.debug.assert(response.len > 0);
+    std.debug.assert(response.len <= std.math.maxInt(u16));
     var descriptors = [_]posix.pollfd{.{
         .fd = stdin_file_descriptor,
         .events = posix.POLL.IN,
