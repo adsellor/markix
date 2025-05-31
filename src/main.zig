@@ -2,14 +2,18 @@ const std = @import("std");
 const terminal = @import("backend/terminal/TerminalCanvas.zig");
 const event = @import("utils/event.zig");
 const terminal_utils = @import("utils/terminal.zig");
+
 const Color = @import("layout/Color.zig").Color;
 const Box = @import("layout/Box.zig").Box;
+const Tree = @import("layout/Tree.zig").Tree;
+const LayoutInfo = @import("layout/Layout.zig").LayoutInfo;
+
 const mem = std.mem;
 const time = std.time;
-const io = std.io;
-const posix = std.posix;
 const Event = event.Event;
 const TerminalCanvas = terminal.TerminalCanvas;
+
+const BoxTree = Tree(Box);
 
 const AnimationContext = struct {
     canvas: *TerminalCanvas,
@@ -18,10 +22,25 @@ const AnimationContext = struct {
     last_time: i128 = 0,
     fps_update_timer: i128 = 0,
     fps_update_interval: i128 = time.ns_per_s,
-    root_box: *Box,
+    tree: BoxTree,
     last_canvas_width: u32 = 0,
     last_canvas_height: u32 = 0,
+    allocator: std.mem.Allocator,
 };
+
+fn renderTree(tree: *const BoxTree, canvas: *TerminalCanvas) void {
+    if (tree.root) |root| {
+        root.element.render(canvas);
+
+        for (0..root.children.len) |i| {
+            const child_tree = BoxTree{
+                .root = root.children[i],
+                .allocator = tree.allocator,
+            };
+            renderTree(&child_tree, canvas);
+        }
+    }
+}
 
 fn animationCallback(context: *AnimationContext, e: Event) bool {
     if (e == .Key and e.Key == 'q') {
@@ -52,15 +71,32 @@ fn animationCallback(context: *AnimationContext, e: Event) bool {
         const outer_x: u16 = @intCast((canvas.width - outer_width) / 2);
         const outer_y: u16 = @intCast((canvas.height / 4 - outer_height) / 2);
 
-        context.root_box.width = outer_width;
-        context.root_box.height = outer_height;
-        context.root_box.x = outer_x;
-        context.root_box.y = outer_y;
+        const new_outer_box = Box.init(outer_width, outer_height, outer_x, outer_y, Color.fromRgb(50, 100, 200));
 
-        if (context.root_box.children.items.len > 0) {
-            const inner_box = context.root_box.children.items[0];
-            inner_box.width = if (outer_width > 10) outer_width - 10 else outer_width;
-            inner_box.height = if (outer_height > 6) outer_height - 6 else outer_height;
+        const old_tree = context.tree;
+        context.tree = old_tree.updateRootElement(new_outer_box) catch {
+            return true;
+        };
+
+        var old_tree_mut = old_tree;
+        old_tree_mut.deinit();
+
+        if (context.tree.getChildCount() > 0) {
+            const inner_width: u16 = if (outer_width > 10) outer_width - 10 else outer_width;
+            const inner_height: u16 = if (outer_height > 6) outer_height - 6 else outer_height;
+
+            const inner_x: u16 = outer_x + 5;
+            const inner_y: u16 = outer_y + 3;
+
+            const new_inner_box = Box.init(inner_width, inner_height, inner_x, inner_y, Color.fromRgb(200, 50, 50));
+
+            var path = BoxTree.Path.init(context.allocator);
+            defer path.deinit();
+            path.append(0) catch return true;
+
+            const updated_tree = context.tree.updateElementAtPath(path, new_inner_box) catch return true;
+            context.tree.deinit();
+            context.tree = updated_tree;
         }
     }
 
@@ -70,10 +106,9 @@ fn animationCallback(context: *AnimationContext, e: Event) bool {
         }
     }
 
-    context.root_box.updatePositions();
-    context.root_box.render(canvas);
-
+    renderTree(&context.tree, canvas);
     const wave_y = (canvas.height * 3) / 4;
+
     for (0..canvas.width) |x| {
         const wave_offset = @as(i32, @intFromFloat(8.0 * @sin(@as(f32, @floatFromInt(context.frame_count)) / 15.0 +
             @as(f32, @floatFromInt(x)) / 20.0)));
@@ -126,22 +161,38 @@ pub fn main() !void {
     const outer_x: u16 = @intCast((canvas.width - outer_width) / 2);
     const outer_y: u16 = @intCast((canvas.height / 4 - outer_height) / 2);
 
-    const outer_box = try Box.init(allocator, outer_width, outer_height, outer_x, outer_y, blue);
-    defer outer_box.deinit();
+    const outer_box = Box.init(outer_width, outer_height, outer_x, outer_y, blue);
+
+    const root_layout = LayoutInfo{
+        .x = @as(u32, outer_x),
+        .y = @as(u32, outer_y),
+    };
+
+    var tree = try BoxTree.initWithRoot(allocator, outer_box, root_layout);
+    defer tree.deinit();
 
     const inner_width: u16 = outer_width - 10;
     const inner_height: u16 = outer_height - 6;
-    const inner_box = try Box.init(allocator, inner_width, inner_height, 0, 0, red);
+    const inner_x: u16 = outer_x + 5;
+    const inner_y: u16 = outer_y + 3;
+    const inner_box = Box.init(inner_width, inner_height, inner_x, inner_y, red);
 
-    try outer_box.addChild(inner_box);
+    const child_layout = LayoutInfo{
+        .x = @as(u32, inner_x),
+        .y = @as(u32, inner_y),
+    };
+    tree = try tree.addChildToRoot(inner_box, child_layout);
 
     var animation_context = AnimationContext{
         .canvas = &canvas,
         .last_time = time.nanoTimestamp(),
-        .root_box = outer_box,
+        .tree = tree,
         .last_canvas_width = canvas.width,
         .last_canvas_height = canvas.height,
+        .allocator = allocator,
     };
 
     try event.runEventLoop(&canvas, AnimationContext, &animation_context, animationCallback);
+
+    animation_context.tree.deinit();
 }
