@@ -1,11 +1,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const Color = @import("Color.zig").Color;
 const Patch = @import("Patch.zig").Patch;
 const TextEntry = @import("TextEntry.zig").TextEntry;
 
-const terminal_utils = @import("../utils/terminal.zig");
+const terminal_utils = @import("../../utils/terminal.zig");
+const Color = @import("../../layout/Color.zig").Color;
 
 const mem = std.mem;
 const Allocator = mem.Allocator;

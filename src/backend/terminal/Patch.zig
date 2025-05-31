@@ -1,7 +1,7 @@
 const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
-const Color = @import("Color.zig").Color;
+const Color = @import("../../layout/Color.zig").Color;
 
 pub const Patch = struct {
     x: u16,

@@ -2,7 +2,7 @@ const std = @import("std");
 const io = std.io;
 const terminal_utils = @import("terminal.zig");
 const TerminalSize = @import("terminal.zig").TerminalSize;
-const TerminalCanvas = @import("../layout/Canvas.zig").TerminalCanvas;
+const TerminalCanvas = @import("../backend/terminal/TerminalCanvas.zig").TerminalCanvas;
 const posix = std.posix;
 
 pub const EventType = enum {

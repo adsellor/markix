@@ -1,5 +1,5 @@
 const std = @import("std");
-const Color = @import("Color.zig").Color;
+const Color = @import("../../layout/Color.zig").Color;
 
 const mem = std.mem;
 const Allocator = std.mem.Allocator;

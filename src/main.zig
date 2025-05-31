@@ -1,5 +1,5 @@
 const std = @import("std");
-const terminal = @import("layout/Canvas.zig");
+const terminal = @import("backend/terminal/TerminalCanvas.zig");
 const event = @import("utils/event.zig");
 const terminal_utils = @import("utils/terminal.zig");
 const Color = @import("layout/Color.zig").Color;
@@ -92,7 +92,7 @@ fn animationCallback(context: *AnimationContext, e: Event) bool {
     canvas.addText(10, 2, "Press 'q' to quit", white, bg_color) catch {};
 
     var fps_buf: [40]u8 = undefined;
-    const target_fps_text = std.fmt.bufPrint(&fps_buf, "Target FPS: {d}", .{120}) catch return true;
+    const target_fps_text = std.fmt.bufPrint(&fps_buf, "Target FPS: {d}", .{240}) catch return true;
     canvas.addText(@intCast(canvas.width - 30), 1, target_fps_text, white, bg_color) catch {};
 
     var real_fps_buf: [40]u8 = undefined;
@@ -116,7 +116,7 @@ pub fn main() !void {
 
     var canvas = try terminal.TerminalCanvas.initAutoSize(allocator);
     defer canvas.deinit();
-    canvas.setRefreshLimit(120);
+    canvas.setRefreshLimit(240);
 
     const blue = Color.fromRgb(50, 100, 200);
     const red = Color.fromRgb(200, 50, 50);
