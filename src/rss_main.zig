@@ -1,9 +1,8 @@
 const std = @import("std");
 const terminal = @import("backend/terminal.zig");
-const framework = @import("framework.zig");
-const Application = @import("app/application.zig").Application;
+const Application = @import("rss/application.zig").Application;
 const theme = @import("app/theme.zig");
-const view = @import("app/view.zig");
+const view = @import("rss/view.zig");
 
 const Context = struct {
     canvas: *terminal.TerminalCanvas,
@@ -16,10 +15,17 @@ pub fn main(init: std.process.Init) !void {
     var canvas = try terminal.TerminalCanvas.init_auto_size(init.gpa);
     defer canvas.deinit();
     try canvas.set_refresh_limit(60);
+    const graphics = terminal.query_graphics_capabilities(init.io) catch
+        terminal.GraphicsCapabilities{};
+    canvas.set_image_protocol(terminal.detect_image_protocol(
+        graphics.sixel,
+        graphics.kitty,
+        init.environ_map.get("MARKIX_IMAGE_PROTOCOL"),
+    ));
 
     const application = try Application.create(init.gpa, init.io, home);
     defer application.destroy(init.gpa);
-    try application.load();
+    try application.load(home);
     var context = Context{ .canvas = &canvas, .application = application };
     try terminal.run_event_loop(
         init.io,
