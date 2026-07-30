@@ -8,6 +8,7 @@ const theme = @import("theme.zig");
 const Rect = framework.Rect;
 const Surface = terminal.Surface;
 const ListItem = terminal.widgets.ListItem;
+const LayoutNodeIndex = framework.layout_tree.LayoutNodeIndex;
 const Span = terminal.widgets.Span;
 const pane_chrome = terminal.widgets.PanelChrome{
     .rail_width = 1,
@@ -31,23 +32,146 @@ pub fn render(application: anytype, canvas: *terminal.TerminalCanvas) !void {
     const surface = Surface{ .canvas = canvas };
     const bounds = surface.bounds();
     surface.fill(bounds, theme.background);
-    var rows: [3]Rect = undefined;
-    try framework.flex.layout(
-        bounds,
+    var tree = framework.LayoutTree.init();
+    const layout = try build_layout(&tree, bounds, application);
+    try framework.layout_tree.evaluate(&tree, bounds);
+    try draw_header(application, surface, node_rect(&tree, layout.header));
+    const content = node_rect(&tree, layout.content);
+    if (application.mode == .add) {
+        try draw_add_form(application, surface, content);
+    } else if (application.mode == .focus) {
+        try draw_focus_mode(application, surface, content);
+    } else {
+        var slot_index: u8 = 0;
+        while (slot_index < layout.slot_count) : (slot_index += 1) {
+            const slot = layout.slots[slot_index];
+            try draw_workspace_slot(
+                application,
+                surface,
+                slot.kind,
+                node_rect(&tree, slot.node),
+            );
+        }
+    }
+    try draw_status(application, surface, node_rect(&tree, layout.status));
+}
+
+const WorkspaceKind = enum { scopes, bookmarks, preview };
+
+const WorkspaceSlot = struct {
+    kind: WorkspaceKind,
+    node: LayoutNodeIndex,
+};
+
+const AppLayout = struct {
+    header: LayoutNodeIndex,
+    content: LayoutNodeIndex,
+    status: LayoutNodeIndex,
+    slots: [3]WorkspaceSlot = undefined,
+    slot_count: u8 = 0,
+};
+
+fn build_layout(
+    tree: *framework.LayoutTree,
+    bounds: Rect,
+    application: anytype,
+) !AppLayout {
+    const root = try tree.set_root(try framework.LayoutElement.flex(
         .column,
         0,
         &.{ .{ .cells = 2 }, .{ .fraction = 1 }, .{ .cells = 1 } },
-        &rows,
-    );
-    try draw_header(application, surface, rows[0]);
-    if (application.mode == .add) {
-        try draw_add_form(application, surface, rows[1]);
-    } else if (application.mode == .focus) {
-        try draw_focus_mode(application, surface, rows[1]);
+    ));
+    var result = AppLayout{
+        .header = try tree.append_child(root, framework.LayoutElement.leaf()),
+        .content = undefined,
+        .status = undefined,
+    };
+    if (application.mode == .add or application.mode == .focus) {
+        result.content = try tree.append_child(root, framework.LayoutElement.leaf());
     } else {
-        try draw_workspace(application, surface, rows[1]);
+        try append_workspace(tree, root, bounds.width, application, &result);
     }
-    try draw_status(application, surface, rows[2]);
+    result.status = try tree.append_child(root, framework.LayoutElement.leaf());
+    return result;
+}
+
+fn append_workspace(
+    tree: *framework.LayoutTree,
+    root: LayoutNodeIndex,
+    width: u16,
+    application: anytype,
+    result: *AppLayout,
+) !void {
+    if (width >= 110) {
+        const tracks = [_]framework.flex.Track{
+            .{ .cells = 20 },
+            .{ .fraction = 2 },
+            .{ .fraction = 3 },
+        };
+        try append_workspace_flex(
+            tree,
+            root,
+            &tracks,
+            &.{ .scopes, .bookmarks, .preview },
+            result,
+        );
+        return;
+    }
+    if (width >= 76) {
+        const first: WorkspaceKind = if (application.browser_focus == .scopes)
+            .scopes
+        else
+            .bookmarks;
+        try append_workspace_flex(
+            tree,
+            root,
+            &.{ .{ .fraction = 2 }, .{ .fraction = 3 } },
+            &.{ first, .preview },
+            result,
+        );
+        return;
+    }
+    result.content = try tree.append_child(root, framework.LayoutElement.leaf());
+    result.slots[0] = .{
+        .kind = narrow_workspace_kind(application),
+        .node = result.content,
+    };
+    result.slot_count = 1;
+}
+
+fn append_workspace_flex(
+    tree: *framework.LayoutTree,
+    root: LayoutNodeIndex,
+    tracks: []const framework.flex.Track,
+    kinds: []const WorkspaceKind,
+    result: *AppLayout,
+) !void {
+    std.debug.assert(tracks.len == kinds.len);
+    std.debug.assert(kinds.len <= result.slots.len);
+    result.content = try tree.append_child(
+        root,
+        try framework.LayoutElement.flex(.row, 1, tracks),
+    );
+    for (kinds, 0..) |kind, index| {
+        result.slots[index] = .{
+            .kind = kind,
+            .node = try tree.append_child(result.content, framework.LayoutElement.leaf()),
+        };
+    }
+    result.slot_count = @intCast(kinds.len);
+}
+
+fn narrow_workspace_kind(application: anytype) WorkspaceKind {
+    if (application.mode == .command) return .preview;
+    return switch (application.browser_focus) {
+        .scopes => .scopes,
+        .bookmarks => if (application.narrow_preview) .preview else .bookmarks,
+        .preview => .preview,
+    };
+}
+
+fn node_rect(tree: *framework.LayoutTree, node: LayoutNodeIndex) Rect {
+    return tree.get(node).?.element.rect;
 }
 
 fn draw_header(application: anytype, surface: Surface, rect: Rect) !void {
@@ -453,63 +577,19 @@ fn register_focus_categories(
     }
 }
 
-fn draw_workspace(application: anytype, surface: Surface, rect: Rect) !void {
-    if (rect.width >= 110) {
-        var columns: [3]Rect = undefined;
-        try framework.flex.layout(
-            rect,
-            .row,
-            1,
-            &.{ .{ .cells = 20 }, .{ .fraction = 2 }, .{ .fraction = 3 } },
-            &columns,
-        );
-        try draw_scopes(application, surface, columns[0]);
-        try draw_bookmarks(application, surface, columns[1]);
-        if (application.mode == .command) {
-            try draw_command_deck(application, surface, columns[2]);
-        } else {
-            try draw_preview(application, surface, columns[2]);
-        }
-    } else if (rect.width >= 76) {
-        try draw_medium_workspace(application, surface, rect);
-    } else {
-        try draw_narrow_workspace(application, surface, rect);
-    }
-}
-
-fn draw_medium_workspace(application: anytype, surface: Surface, rect: Rect) !void {
-    var columns: [2]Rect = undefined;
-    try framework.flex.layout(
-        rect,
-        .row,
-        1,
-        &.{ .{ .fraction = 2 }, .{ .fraction = 3 } },
-        &columns,
-    );
-    if (application.browser_focus == .scopes) {
-        try draw_scopes(application, surface, columns[0]);
-    } else {
-        try draw_bookmarks(application, surface, columns[0]);
-    }
-    if (application.mode == .command) {
-        try draw_command_deck(application, surface, columns[1]);
-    } else {
-        try draw_preview(application, surface, columns[1]);
-    }
-}
-
-fn draw_narrow_workspace(application: anytype, surface: Surface, rect: Rect) !void {
-    if (application.mode == .command) {
-        try draw_command_deck(application, surface, rect);
-        return;
-    }
-    switch (application.browser_focus) {
+fn draw_workspace_slot(
+    application: anytype,
+    surface: Surface,
+    kind: WorkspaceKind,
+    rect: Rect,
+) !void {
+    switch (kind) {
         .scopes => try draw_scopes(application, surface, rect),
-        .bookmarks => if (application.narrow_preview)
-            try draw_preview(application, surface, rect)
+        .bookmarks => try draw_bookmarks(application, surface, rect),
+        .preview => if (application.mode == .command)
+            try draw_command_deck(application, surface, rect)
         else
-            try draw_bookmarks(application, surface, rect),
-        .preview => try draw_preview(application, surface, rect),
+            try draw_preview(application, surface, rect),
     }
 }
 
@@ -1182,9 +1262,8 @@ fn draw_add_form(application: anytype, surface: Surface, rect: Rect) !void {
     );
     if (inner.height <= 2) return;
     const grid_rect = Rect.init(inner.x, inner.y + 2, inner.width, inner.height - 2);
-    var cells: [8]Rect = undefined;
-    try framework.grid.layout(
-        grid_rect,
+    var tree = framework.LayoutTree.init();
+    const root = try tree.set_root(try framework.LayoutElement.grid(
         1,
         1,
         &.{ .{ .cells = 8 }, .{ .fraction = 1 } },
@@ -1194,8 +1273,14 @@ fn draw_add_form(application: anytype, surface: Surface, rect: Rect) !void {
             .{ .cells = 1 },
             .{ .cells = 1 },
         },
-        &cells,
-    );
+    ));
+    var nodes: [8]LayoutNodeIndex = undefined;
+    for (&nodes) |*node| {
+        node.* = try tree.append_child(root, framework.LayoutElement.leaf());
+    }
+    try framework.layout_tree.evaluate(&tree, grid_rect);
+    var cells: [8]Rect = undefined;
+    for (nodes, 0..) |node, index| cells[index] = node_rect(&tree, node);
     try draw_form_labels(surface, &cells);
     try draw_form_inputs(application, surface, &cells);
 }

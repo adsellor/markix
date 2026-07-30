@@ -9,6 +9,7 @@ const limits = @import("limits.zig");
 const Rect = framework.Rect;
 const Surface = terminal.Surface;
 const ListItem = terminal.widgets.ListItem;
+const LayoutNodeIndex = framework.layout_tree.LayoutNodeIndex;
 const pane_chrome = terminal.widgets.PanelChrome{
     .rail_width = 1,
     .rail_height = 3,
@@ -38,17 +39,141 @@ pub fn render(application: anytype, canvas: *terminal.TerminalCanvas) !void {
         try draw_reader(application, surface, bounds);
         return;
     }
-    var rows: [3]Rect = undefined;
-    try framework.flex.layout(
-        bounds,
+    var tree = framework.LayoutTree.init();
+    const layout = try build_layout(&tree, bounds, application);
+    try framework.layout_tree.evaluate(&tree, bounds);
+    try draw_header(application, surface, node_rect(&tree, layout.header));
+    var pane_index: u8 = 0;
+    while (pane_index < layout.pane_count) : (pane_index += 1) {
+        const pane = layout.panes[pane_index];
+        try draw_pane(application, surface, pane.focus, node_rect(&tree, pane.node));
+    }
+    try draw_status(application, surface, node_rect(&tree, layout.status));
+}
+
+const PaneSlot = struct {
+    focus: application_module.Focus,
+    node: LayoutNodeIndex,
+};
+
+const RssLayout = struct {
+    header: LayoutNodeIndex,
+    status: LayoutNodeIndex,
+    panes: [4]PaneSlot = undefined,
+    pane_count: u8 = 0,
+};
+
+fn build_layout(
+    tree: *framework.LayoutTree,
+    bounds: Rect,
+    application: anytype,
+) !RssLayout {
+    const root = try tree.set_root(try framework.LayoutElement.flex(
         .column,
         0,
         &.{ .{ .cells = 2 }, .{ .fraction = 1 }, .{ .cells = 1 } },
-        &rows,
+    ));
+    var result = RssLayout{
+        .header = try tree.append_child(root, framework.LayoutElement.leaf()),
+        .status = undefined,
+    };
+    const workspace = try append_workspace(tree, root, bounds.width, application);
+    result.pane_count = workspace.pane_count;
+    @memcpy(result.panes[0..workspace.pane_count], workspace.panes[0..workspace.pane_count]);
+    result.status = try tree.append_child(root, framework.LayoutElement.leaf());
+    return result;
+}
+
+const WorkspaceLayout = struct {
+    panes: [4]PaneSlot = undefined,
+    pane_count: u8,
+};
+
+fn append_workspace(
+    tree: *framework.LayoutTree,
+    root: LayoutNodeIndex,
+    width: u16,
+    application: anytype,
+) !WorkspaceLayout {
+    if (width >= 120) return append_wide_workspace(tree, root, application);
+    if (width >= 80) return append_medium_workspace(tree, root, application);
+    const workspace = try tree.append_child(root, framework.LayoutElement.leaf());
+    return .{
+        .panes = pane_slots(&.{application.focus}, &.{workspace}),
+        .pane_count = 1,
+    };
+}
+
+fn append_wide_workspace(
+    tree: *framework.LayoutTree,
+    root: LayoutNodeIndex,
+    application: anytype,
+) !WorkspaceLayout {
+    const tracks = [_]framework.flex.Track{
+        section_track(application, .categories, .{ .cells = 18 }),
+        section_track(application, .feeds, .{ .cells = 30 }),
+        section_track(application, .articles, .{ .fraction = 2 }),
+        section_track(application, .reader, .{ .fraction = 3 }),
+    };
+    const workspace = try tree.append_child(
+        root,
+        try framework.LayoutElement.flex(.row, 1, &tracks),
     );
-    try draw_header(application, surface, rows[0]);
-    try draw_workspace(application, surface, rows[1]);
-    try draw_status(application, surface, rows[2]);
+    const focuses = [_]application_module.Focus{ .categories, .feeds, .articles, .reader };
+    var nodes: [4]LayoutNodeIndex = undefined;
+    append_leaves(tree, workspace, &nodes) catch |err| return err;
+    return .{ .panes = pane_slots(&focuses, &nodes), .pane_count = 4 };
+}
+
+fn append_medium_workspace(
+    tree: *framework.LayoutTree,
+    root: LayoutNodeIndex,
+    application: anytype,
+) !WorkspaceLayout {
+    const navigation: application_module.Focus = if (application.focus == .categories)
+        .categories
+    else
+        .feeds;
+    const tracks = [_]framework.flex.Track{
+        section_track(application, navigation, .{ .cells = 28 }),
+        section_track(application, .articles, .{ .fraction = 2 }),
+        section_track(application, .reader, .{ .fraction = 3 }),
+    };
+    const workspace = try tree.append_child(
+        root,
+        try framework.LayoutElement.flex(.row, 1, &tracks),
+    );
+    const focuses = [_]application_module.Focus{ navigation, .articles, .reader };
+    var nodes: [3]LayoutNodeIndex = undefined;
+    append_leaves(tree, workspace, &nodes) catch |err| return err;
+    return .{ .panes = pane_slots(&focuses, &nodes), .pane_count = 3 };
+}
+
+fn append_leaves(
+    tree: *framework.LayoutTree,
+    parent: LayoutNodeIndex,
+    nodes: []LayoutNodeIndex,
+) !void {
+    for (nodes) |*node| {
+        node.* = try tree.append_child(parent, framework.LayoutElement.leaf());
+    }
+}
+
+fn pane_slots(
+    focuses: []const application_module.Focus,
+    nodes: []const LayoutNodeIndex,
+) [4]PaneSlot {
+    std.debug.assert(focuses.len == nodes.len);
+    std.debug.assert(focuses.len <= 4);
+    var panes: [4]PaneSlot = undefined;
+    for (focuses, nodes, 0..) |focus, node, index| {
+        panes[index] = .{ .focus = focus, .node = node };
+    }
+    return panes;
+}
+
+fn node_rect(tree: *framework.LayoutTree, node: LayoutNodeIndex) Rect {
+    return tree.get(node).?.element.rect;
 }
 
 const HelpLine = struct {
@@ -231,56 +356,13 @@ fn draw_breadcrumb(application: anytype, surface: Surface, rect: Rect) !void {
     });
 }
 
-fn draw_workspace(application: anytype, surface: Surface, rect: Rect) !void {
-    if (rect.width >= 120) {
-        var columns: [4]Rect = undefined;
-        const tracks = [_]framework.flex.Track{
-            section_track(application, .categories, .{ .cells = 18 }),
-            section_track(application, .feeds, .{ .cells = 30 }),
-            section_track(application, .articles, .{ .fraction = 2 }),
-            section_track(application, .reader, .{ .fraction = 3 }),
-        };
-        try framework.flex.layout(
-            rect,
-            .row,
-            1,
-            &tracks,
-            &columns,
-        );
-        try draw_categories(application, surface, columns[0]);
-        try draw_feeds(application, surface, columns[1]);
-        try draw_articles(application, surface, columns[2]);
-        try draw_reader(application, surface, columns[3]);
-        return;
-    }
-    if (rect.width >= 80) {
-        var columns: [3]Rect = undefined;
-        const navigation = if (application.focus == .categories)
-            application_module.Focus.categories
-        else
-            application_module.Focus.feeds;
-        const tracks = [_]framework.flex.Track{
-            section_track(application, navigation, .{ .cells = 28 }),
-            section_track(application, .articles, .{ .fraction = 2 }),
-            section_track(application, .reader, .{ .fraction = 3 }),
-        };
-        try framework.flex.layout(
-            rect,
-            .row,
-            1,
-            &tracks,
-            &columns,
-        );
-        if (application.focus == .categories) {
-            try draw_categories(application, surface, columns[0]);
-        } else {
-            try draw_feeds(application, surface, columns[0]);
-        }
-        try draw_articles(application, surface, columns[1]);
-        try draw_reader(application, surface, columns[2]);
-        return;
-    }
-    switch (application.focus) {
+fn draw_pane(
+    application: anytype,
+    surface: Surface,
+    focus: application_module.Focus,
+    rect: Rect,
+) !void {
+    switch (focus) {
         .categories => try draw_categories(application, surface, rect),
         .feeds => try draw_feeds(application, surface, rect),
         .articles => try draw_articles(application, surface, rect),

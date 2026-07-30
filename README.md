@@ -98,8 +98,7 @@ the Browse pane to restrict the bookmark list to that exact tag.
 Backend-neutral layout, style, input state, and the bounded layout tree live in
 `src/framework`. Terminal rendering and patch generation live in
 `src/backend/terminal`. The bookmark product lives in `src/app`, with
-`src/main.zig` selecting the terminal backend. See
-[ARCHITECTURE.md](ARCHITECTURE.md) and [TIGER_STYLE.md](TIGER_STYLE.md).
+`src/main.zig` selecting the terminal backend.
 
 ```sh
 zig build check

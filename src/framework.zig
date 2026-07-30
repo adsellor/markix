@@ -8,7 +8,10 @@ pub const Color = @import("framework/layout/color.zig").Color;
 pub const Rect = @import("framework/layout/rect.zig").Rect;
 pub const Style = @import("framework/style.zig").Style;
 pub const TextSelectionStyle = @import("framework/style.zig").TextSelectionStyle;
-pub const Tree = @import("framework/layout/tree.zig").Tree;
+pub const layout_tree = @import("framework/layout/tree.zig");
+pub const LayoutElement = layout_tree.LayoutElement;
+pub const LayoutTree = layout_tree.LayoutTree;
+pub const Tree = layout_tree.Tree;
 
 pub const widgets = struct {
     pub const TextInput = @import("framework/widgets/text_input.zig").TextInput;
