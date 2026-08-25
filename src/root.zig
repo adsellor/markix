@@ -24,10 +24,11 @@ pub const run_event_loop = @import("backend/terminal/event.zig").run_event_loop;
 // Widgets: the vocabulary of a screen.
 pub const widgets = @import("widgets.zig");
 
+pub const engine = @import("engine.zig");
+
 // Domains, each self-contained.
 pub const layout = @import("layout.zig");
 pub const terminal = @import("backend/terminal.zig");
-pub const web = @import("backend/web.zig");
 pub const theme = @import("theme.zig");
 pub const dom = @import("dom.zig");
 pub const render = @import("render.zig");

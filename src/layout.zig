@@ -11,7 +11,6 @@ pub const TextSelectionStyle = @import("style/style.zig").TextSelectionStyle;
 pub const layout_tree = @import("layout/tree.zig");
 pub const text_measure = @import("layout/text_measure.zig");
 pub const inline_layout = @import("layout/inline_layout.zig");
-pub const breakpoints = @import("layout/breakpoints.zig");
 pub const LayoutElement = layout_tree.LayoutElement;
 pub const LayoutTree = layout_tree.LayoutTree;
 pub const Tree = layout_tree.Tree;

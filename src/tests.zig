@@ -1,4 +1,6 @@
 test {
+    _ = @import("api_terminal_test.zig");
+    _ = @import("engine.zig");
     _ = @import("backend/terminal/canvas.zig");
     _ = @import("backend/terminal/image.zig");
     _ = @import("backend/terminal/input.zig");
@@ -23,22 +25,16 @@ test {
     _ = @import("parser/document.zig");
     _ = @import("parser/readable.zig");
     _ = @import("parser/xml.zig");
-    _ = @import("backend/web/commands.zig");
-    _ = @import("backend/web/input.zig");
-    _ = @import("backend/web/serialize.zig");
     _ = @import("dom/types.zig");
     _ = @import("dom/node.zig");
     _ = @import("dom/tree.zig");
     _ = @import("dom/event.zig");
     _ = @import("render/terminal.zig");
-    _ = @import("render/web.zig");
-    _ = @import("render/html.zig");
     _ = @import("render/paint.zig");
     _ = @import("widgets/heading.zig");
     _ = @import("widgets/rule.zig");
     _ = @import("widgets/code_block.zig");
     _ = @import("layout/text_measure.zig");
     _ = @import("layout/inline_layout.zig");
-    _ = @import("layout/breakpoints.zig");
     _ = @import("style_test.zig");
 }
