@@ -1,5 +1,5 @@
 const std = @import("std");
-const layout = @import("layout.zig");
+const layout = @import("resolve.zig");
 
 pub fn columns(value: []const u8) i32 {
     var count: i32 = 0;

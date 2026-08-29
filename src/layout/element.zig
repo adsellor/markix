@@ -24,6 +24,7 @@ pub const Element = enum(u8) {
     time,
     label,
     text_run,
+    canvas,
 
     pub fn tag(self: Element) []const u8 {
         return switch (self) {
@@ -48,6 +49,7 @@ pub const Element = enum(u8) {
             .time => "time",
             .label => "span",
             .text_run => "",
+            .canvas => "canvas",
         };
     }
 

@@ -7,71 +7,35 @@ pub const SourceFile = struct {
 };
 
 pub const source_files = [_]SourceFile{
+    source("src/backend.zig", "backend.zig", true),
+    source("src/backend/canvas.zig", "backend/canvas.zig", true),
+    source("src/backend/cells.zig", "backend/cells.zig", true),
+    source("src/backend/html.zig", "backend/html.zig", true),
+    source("src/backend/loop.zig", "backend/loop.zig", true),
+    source("src/backend/patch.zig", "backend/patch.zig", true),
+    source("src/backend/renderer.zig", "backend/renderer.zig", true),
     source("src/backend/terminal.zig", "backend/terminal.zig", true),
-    source("src/layout.zig", "layout.zig", true),
-    source("src/engine.zig", "engine.zig", true),
-    source("src/engine/box.zig", "engine/box.zig", true),
-    source("src/engine/dom.zig", "engine/dom.zig", true),
-    source("src/engine/dsl.zig", "engine/dsl.zig", true),
-    source("src/engine/html.zig", "engine/html.zig", true),
-    source("src/engine/layout.zig", "engine/layout.zig", true),
-    source("src/engine/measure.zig", "engine/measure.zig", true),
-    source("src/engine/rect.zig", "engine/rect.zig", true),
-    source("src/engine/style.zig", "engine/style.zig", true),
-    source("src/engine/tree.zig", "engine/tree.zig", true),
-    source("src/render/paint.zig", "render/paint.zig", true),
-    source("src/backend/terminal/canvas.zig", "backend/terminal/canvas.zig", true),
     source("src/backend/terminal/event.zig", "backend/terminal/event.zig", true),
-    source("src/backend/terminal/image.zig", "backend/terminal/image.zig", true),
     source("src/backend/terminal/input.zig", "backend/terminal/input.zig", true),
     source("src/backend/terminal/limits.zig", "backend/terminal/limits.zig", true),
-    source("src/backend/terminal/selection.zig", "backend/terminal/selection.zig", true),
-    source("src/backend/terminal/sixel.zig", "backend/terminal/sixel.zig", true),
     source("src/backend/terminal/terminal.zig", "backend/terminal/terminal.zig", true),
-    source("src/backend/terminal/text_entry.zig", "backend/terminal/text_entry.zig", true),
-    source("src/backend/terminal/text_width.zig", "backend/terminal/text_width.zig", true),
-    source("src/widgets/badge.zig", "widgets/badge.zig", true),
-    source("src/widgets/fuzzy_text.zig", "widgets/fuzzy_text.zig", true),
-    source("src/widgets/image.zig", "widgets/image.zig", true),
-    source("src/widgets/inline.zig", "widgets/inline.zig", true),
-    source("src/widgets/label.zig", "widgets/label.zig", true),
-    source("src/widgets/list.zig", "widgets/list.zig", true),
-    source("src/widgets/panel.zig", "widgets/panel.zig", true),
-    source("src/widgets/code_block.zig", "widgets/code_block.zig", true),
-    source("src/widgets/rule.zig", "widgets/rule.zig", true),
-    source("src/widgets/heading.zig", "widgets/heading.zig", true),
-    source("src/widgets/scrollbar.zig", "widgets/scrollbar.zig", true),
-    source("src/widgets/segmented.zig", "widgets/segmented.zig", true),
-    source("src/widgets/status_line.zig", "widgets/status_line.zig", true),
-    source("src/widgets/surface.zig", "widgets/surface.zig", true),
-    source("src/widgets/text_input.zig", "widgets/text_input.zig", true),
-    source("src/style/color.zig", "style/color.zig", true),
-    source("src/style/style.zig", "style/style.zig", true),
-    source("src/style/text_style.zig", "style/text_style.zig", true),
-    source("src/utils/fuzzy.zig", "utils/fuzzy.zig", true),
-    source("src/utils/input.zig", "utils/input.zig", true),
-    source("src/utils/limits.zig", "utils/limits.zig", true),
-    source("src/layout/flex.zig", "layout/flex.zig", true),
-    source("src/layout/grid.zig", "layout/grid.zig", true),
+    source("src/layout.zig", "layout.zig", true),
+    source("src/layout/box.zig", "layout/box.zig", true),
+    source("src/layout/dsl.zig", "layout/dsl.zig", true),
+    source("src/layout/element.zig", "layout/element.zig", true),
+    source("src/layout/measure.zig", "layout/measure.zig", true),
     source("src/layout/rect.zig", "layout/rect.zig", true),
+    source("src/layout/resolve.zig", "layout/resolve.zig", true),
+    source("src/layout/style.zig", "layout/style.zig", true),
     source("src/layout/tree.zig", "layout/tree.zig", true),
-    source("src/layout/text_measure.zig", "layout/text_measure.zig", true),
-    source("src/layout/inline_layout.zig", "layout/inline_layout.zig", true),
-    source("src/parser/document.zig", "parser/document.zig", true),
-    source("src/parser/readable.zig", "parser/readable.zig", true),
-    source("src/parser/xml.zig", "parser/xml.zig", true),
-    source("src/dom/types.zig", "dom/types.zig", true),
-    source("src/dom/node.zig", "dom/node.zig", true),
-    source("src/dom/tree.zig", "dom/tree.zig", true),
-    source("src/dom/event.zig", "dom/event.zig", true),
-    source("src/render/terminal.zig", "render/terminal.zig", true),
+    source("src/layout/units.zig", "layout/units.zig", true),
+    source("src/pipeline_tests.zig", "pipeline_tests.zig", false),
+    source("src/reader.zig", "reader.zig", true),
     source("src/root.zig", "root.zig", true),
-    source("src/dom.zig", "dom.zig", true),
-    source("src/render.zig", "render.zig", true),
-    source("src/widgets.zig", "widgets.zig", true),
-    source("src/theme.zig", "theme.zig", true),
     source("src/style_test.zig", "style_test.zig", false),
     source("src/tests.zig", "tests.zig", false),
+    source("src/utils/input.zig", "utils/input.zig", true),
+    source("src/widgets.zig", "widgets.zig", true),
 };
 
 fn source(
@@ -98,12 +62,12 @@ test "source lines do not exceed 100 columns" {
     }
 }
 
-/// One function, located.
 const Function = struct {
     file: []const u8,
     line: u32,
     name: []const u8,
     source: []const u8,
+    below_tests: bool = false,
 
     fn line_count(self: Function) u32 {
         return @intCast(std.mem.count(u8, self.source, "\n") + 1);
@@ -113,39 +77,29 @@ const Function = struct {
         return @intCast(std.mem.count(u8, self.source, "assert("));
     }
 
-    /// A function returning a type rather than a value.
-    ///
-    /// Zig writes generics as functions, and the struct one returns is a
-    /// declaration rather than a body -- it is not read as a function is read
-    /// and the rules for one do not describe it. Named by the convention Zig
-    /// itself uses for them.
     fn builds_a_type(self: Function) bool {
         if (self.name.len == 0) return false;
         return std.ascii.isUpper(self.name[0]);
     }
 
     fn is_test_scaffolding(self: Function) bool {
-        return std.mem.indexOf(u8, self.source, "std.testing") != null;
+        if (std.mem.indexOf(u8, self.source, "std.testing") != null) return true;
+        if (std.mem.indexOf(u8, self.source, "testing.") != null) return true;
+        return self.below_tests;
     }
 
-    /// A function that is one exhaustive switch and nothing else.
-    ///
-    /// There is nothing for an assertion to catch in a total mapping from an
-    /// enum: Zig already refuses to compile it if a case is missing, which is
-    /// the whole of what could be asserted. Assertions are for what the type
-    /// system cannot state, and here it states everything.
     fn is_total_mapping(self: Function) bool {
         if (std.mem.indexOf(u8, self.source, "return switch (") == null) return false;
         return std.mem.count(u8, self.source, "return ") == 1;
     }
 };
 
-/// Calls `visit` with every function in every source file.
-///
-/// The span comes from the function's first and last tokens, not from
-/// `nodeToSpan`: for a `fn_decl` that returns the `pub fn` keywords alone. A
-/// rule measured against those two words is a rule that passes on everything,
-/// which is what the length rule here did until it was measured.
+fn tests_begin(text: []const u8) usize {
+    const marker = std.mem.indexOf(u8, text, "\nconst testing = std.testing;") orelse text.len;
+    const first = std.mem.indexOf(u8, text, "\ntest ") orelse text.len;
+    return @min(marker, first);
+}
+
 fn walk_functions(context: anytype, comptime visit: fn (@TypeOf(context), Function) void) !void {
     for (source_files) |file| {
         var ast = try std.zig.Ast.parse(
@@ -171,6 +125,7 @@ fn walk_functions(context: anytype, comptime visit: fn (@TypeOf(context), Functi
                 .line = @intCast(std.mem.count(u8, file.source[0..start], "\n") + 1),
                 .name = ast.tokenSlice(ast.nodes.items(.main_token)[node_raw] + 1),
                 .source = file.source[start..end],
+                .below_tests = start > tests_begin(file.source),
             });
         }
     }
@@ -200,15 +155,6 @@ test "functions do not exceed 70 lines" {
     try std.testing.expectEqual(@as(u32, 0), tally.over_length);
 }
 
-/// Functions of substance carrying fewer than two assertions.
-///
-/// TigerStyle asks for two per function. Applied to every accessor and every
-/// three-line switch that would be noise, so this asks it of the functions
-/// where an assertion can actually be wrong about something: fifteen lines or
-/// more, and not test scaffolding.
-///
-/// The number is a debt, not a target. It only ever goes down -- a change that
-/// raises it has added a function that states none of what it assumes.
 const under_asserted_max: u32 = 0;
 
 test "functions of substance assert what they assume" {

@@ -1,5 +1,6 @@
 const std = @import("std");
-const mx = @import("../engine.zig");
+const mx = @import("layout.zig");
+const backend = @import("backend.zig");
 
 const el = mx.dsl;
 const Node = mx.Node;
@@ -23,7 +24,6 @@ test "a fixed row lays its children end to end" {
 
     try std.testing.expectEqual(@as(i32, 0), tree.at(1).rect.x);
     try std.testing.expectEqual(@as(i32, 2), tree.at(1).rect.width);
-    // One unit of gap, so the second run starts at 3, not 2.
     try std.testing.expectEqual(@as(i32, 3), tree.at(2).rect.x);
 }
 
@@ -70,7 +70,6 @@ test "grow children split the remainder and leave nothing unused" {
 
     const total = tree.at(1).rect.width + tree.at(2).rect.width + tree.at(3).rect.width;
     try std.testing.expectEqual(@as(i32, 100), total);
-    // The odd unit goes to the first rather than being lost to truncation.
     try std.testing.expectEqual(@as(i32, 34), tree.at(1).rect.width);
 }
 
@@ -96,7 +95,6 @@ test "text wraps into the width the grow pass settled" {
     }));
     resolve_at(&tree, 10);
 
-    // "the quick" / "brown fox" two rows at a measure of ten.
     try std.testing.expectEqual(@as(i32, 10), tree.at(1).rect.width);
     try std.testing.expectEqual(@as(i32, 2), tree.at(1).rect.height);
 }
@@ -125,9 +123,6 @@ test "the same tree at a narrower measure is taller" {
 test "inline children are one text stream, not several" {
     var storage: [8]Node = undefined;
     var tree = mx.Tree.init(&storage);
-    // "see the manual now" eighteen columns, so it fits one row of twenty
-    // and takes two at ten. A renderer that measured each piece on its own
-    // would see three short runs and never wrap at all.
     try el.mount(&tree, el.column(.{ .width = .{ .fixed = 10 } }, .{
         el.rich(.{ .width = .{ .grow = .{} } }, .{
             el.run("see the ", .{}),
@@ -143,9 +138,6 @@ test "inline children are one text stream, not several" {
 test "a word split across inline runs is one word" {
     var storage: [8]Node = undefined;
     var tree = mx.Tree.init(&storage);
-    // "abcde" and "fghij" abut with no space, so they are one ten-column
-    // word and fit a measure of ten exactly. Measured as two separate runs
-    // they would be two words needing eleven columns, and would wrap.
     try el.mount(&tree, el.column(.{ .width = .{ .fixed = 10 } }, .{
         el.rich(.{ .width = .{ .grow = .{} } }, .{
             el.run("abcde", .{}),
@@ -167,7 +159,6 @@ test "inline boxes get no geometry of their own" {
     }));
     resolve_at(&tree, 40);
 
-    // The paragraph is placed; the link inside it is flowed.
     try std.testing.expect(tree.at(1).rect.width > 0);
     try std.testing.expectEqual(@as(i32, 0), tree.at(2).rect.width);
 }
@@ -180,7 +171,6 @@ test "a code block keeps its own line breaks" {
     }));
     resolve_at(&tree, 8);
 
-    // Three authored lines, and the long one is not reflowed into four.
     try std.testing.expectEqual(@as(i32, 3), tree.at(1).rect.height);
 }
 
@@ -207,8 +197,6 @@ test "overflow shrinks what may shrink and respects a declared minimum" {
     }));
     resolve_at(&tree, 10);
 
-    // Sixteen units of content into ten. Neither child drops below the six it
-    // declared, so the row overflows visibly instead of the text vanishing.
     try std.testing.expectEqual(@as(i32, 6), tree.at(1).rect.width);
     try std.testing.expectEqual(@as(i32, 6), tree.at(2).rect.width);
 }
@@ -222,7 +210,6 @@ test "percent resolves against the parent's inner extent" {
     }, .{el.column(.{ .width = .{ .percent = 50 } }, .{})}));
     resolve_at(&tree, 40);
 
-    // Half of the thirty units inside the padding, not half of the forty.
     try std.testing.expectEqual(@as(i32, 15), tree.at(1).rect.width);
 }
 
@@ -277,15 +264,13 @@ test "a zero-width measure neither divides by zero nor loops" {
     try std.testing.expectEqual(@as(i32, 0), tree.at(1).rect.width);
 }
 
-// ---------------------------------------------------------------- rendering
-
 fn render(
     buffer: []u8,
     tree: *mx.Tree,
 ) ![]const u8 {
     var writer = std.Io.Writer.fixed(buffer);
-    const table = mx.html.StyleTable.collect(tree);
-    try mx.html.write(&writer, tree, &table, .{});
+    const table = backend.html.StyleTable.collect(tree);
+    try backend.html.write(&writer, tree, &table, .{});
     return writer.buffered();
 }
 
@@ -300,12 +285,12 @@ test "one class per distinct style, however many boxes use it" {
     }));
     resolve_at(&tree, 40);
 
-    const table = mx.html.StyleTable.collect(&tree);
+    const table = backend.html.StyleTable.collect(&tree);
     try std.testing.expectEqual(@as(usize, 1), table.len);
 
     var sheet: [512]u8 = undefined;
     var writer = std.Io.Writer.fixed(&sheet);
-    try mx.html.write_styles(&writer, &table, .{});
+    try backend.html.write_styles(&writer, &table, .{});
     try std.testing.expectEqualStrings(
         ".p .s0{color:#c4a7e7;font-weight:700}",
         writer.buffered(),
@@ -324,7 +309,6 @@ test "markup refers to the sheet rather than repeating it" {
     var buffer: [1024]u8 = undefined;
     const output = try render(&buffer, &tree);
     try std.testing.expect(std.mem.indexOf(u8, output, "<h2 id=\"title\" class=\"s0\"") != null);
-    // The colour is in the sheet, not on the element.
     try std.testing.expect(std.mem.indexOf(u8, output, "c4a7e7") == null);
 }
 
@@ -359,7 +343,6 @@ test "inline elements are emitted without geometry" {
         output,
         "<a href=\"/manual\" class=\"x\">the manual</a>",
     ) != null);
-    // The paragraph is positioned; the anchor inside it is not.
     try std.testing.expect(std.mem.indexOf(u8, output, "<p style=\"left:") != null);
 }
 
@@ -376,8 +359,6 @@ test "padding is written out, not only reserved" {
 
     var buffer: [1024]u8 = undefined;
     const output = try render(&buffer, &tree);
-    // The box grew by a row; the browser has to know the row is above the
-    // text rather than below it.
     try std.testing.expect(std.mem.indexOf(u8, output, "height:38px") != null);
     try std.testing.expect(
         std.mem.indexOf(u8, output, "padding:19px 0px 0px 0px") != null,
@@ -426,20 +407,16 @@ test "void elements are not given a closing tag" {
 }
 
 test "the same style declaration drives both renderings" {
-    // The property the old design could not hold: the wire format carried
-    // colour and no attributes, so a bold heading rendered bold in the
-    // generated document and lost its weight the instant the engine took over.
-    // Here there is one declaration and both readers see all of it.
     const heading = mx.Style{ .foreground = mx.Color.rgb(0xc4a7e7), .bold = true };
     try std.testing.expect(heading.bold);
     try std.testing.expect(heading.foreground.is_set());
 
     var sheet: [256]u8 = undefined;
     var writer = std.Io.Writer.fixed(&sheet);
-    var table = mx.html.StyleTable{};
+    var table = backend.html.StyleTable{};
     table.entries[0] = heading;
     table.len = 1;
-    try mx.html.write_styles(&writer, &table, .{});
+    try backend.html.write_styles(&writer, &table, .{});
     try std.testing.expect(
         std.mem.indexOf(u8, writer.buffered(), "font-weight:700") != null,
     );
@@ -456,16 +433,11 @@ test "horizontal geometry can be written in characters" {
 
     var buffer: [1024]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buffer);
-    const table = mx.html.StyleTable.collect(&tree);
-    try mx.html.write(&writer, &tree, &table, .{ .horizontal = .characters });
+    const table = backend.html.StyleTable.collect(&tree);
+    try backend.html.write(&writer, &tree, &table, .{ .horizontal = .characters });
     const output = writer.buffered();
 
-    // The second run starts three characters in, and is three wide. No pixel
-    // advance is assumed anywhere, which is the point: a box is exactly as
-    // wide as the characters standing in it.
     try std.testing.expect(std.mem.indexOf(u8, output, "left:3ch;top:0px;width:3ch") != null);
-    // Vertical is still pixels: the line height is set exactly, so there is
-    // nothing to guess about it.
     try std.testing.expect(std.mem.indexOf(u8, output, "height:19px") != null);
 }
 
@@ -486,7 +458,6 @@ test "pixels remain the default" {
 test "a line can be worth more than one unit" {
     var storage: [8]Node = undefined;
     var tree = mx.Tree.init(&storage);
-    // Two lines of text, each two units tall.
     try el.mount(&tree, el.column(.{ .width = .{ .fixed = 10 } }, .{
         el.heading(1, "the quick brown fox", .{
             .width = .{ .grow = .{} },
@@ -527,7 +498,6 @@ test "an external link opens in its own tab, safely" {
         output,
         "<a href=\"https://example.com\" target=_blank rel=noopener",
     ) != null);
-    // An internal one stays where it is.
     try std.testing.expect(std.mem.indexOf(u8, output, "<a href=\"/about\" class") != null);
 }
 
@@ -546,7 +516,7 @@ test "the semantic rendering is the document without the coordinates" {
 
     var buffer: [1024]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buffer);
-    try mx.html.write_semantic(&writer, &tree, 0, .{});
+    try backend.html.write_semantic(&writer, &tree, 0, .{});
     try std.testing.expectEqualStrings(
         "<div><h2 id=\"a-heading\">A Heading</h2>" ++
             "<p>see <a href=\"/manual\">the manual</a><b> now</b></p></div>",
@@ -567,8 +537,7 @@ test "a semantic rendering can start below the root" {
 
     var buffer: [512]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buffer);
-    // Publishing an article without the page it happened to sit on.
-    try mx.html.write_semantic(&writer, &tree, 2, .{});
+    try backend.html.write_semantic(&writer, &tree, 2, .{});
     try std.testing.expectEqualStrings(
         "<article><p>the article</p></article>",
         writer.buffered(),
@@ -587,7 +556,7 @@ test "syndicated markup can be made absolute" {
 
     var buffer: [1024]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buffer);
-    try mx.html.write_semantic(&writer, &tree, 0, .{ .base = "https://site.example" });
+    try backend.html.write_semantic(&writer, &tree, 0, .{ .base = "https://site.example" });
     const output = writer.buffered();
 
     try std.testing.expect(
@@ -611,7 +580,28 @@ test "a target cannot end a CDATA section" {
 
     var buffer: [512]u8 = undefined;
     var writer = std.Io.Writer.fixed(&buffer);
-    try mx.html.write_semantic(&writer, &tree, 0, .{});
-    // Embedded in a feed, a literal one here would truncate the item.
+    try backend.html.write_semantic(&writer, &tree, 0, .{});
     try std.testing.expect(std.mem.indexOf(u8, writer.buffered(), "]]>") == null);
+}
+
+test "a canvas carries its resolution as well as its size" {
+    var storage: [4]Node = undefined;
+    var tree = mx.Tree.init(&storage);
+    _ = try el.mount_under(&tree, mx.none, el.column(.{
+        .width = .{ .fixed = 70 },
+        .height = .{ .fixed = 7 },
+        .element = .canvas,
+        .id = "wave",
+    }, .{}));
+    resolve_at(&tree, 70);
+
+    var buffer: [1024]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    const table = backend.html.StyleTable.collect(&tree);
+    try backend.html.write(&writer, &tree, &table, .{ .units = .{ .width = 9, .height = 30 } });
+    const out = writer.buffered();
+
+    try std.testing.expect(std.mem.startsWith(u8, out, "<canvas id=\"wave\""));
+    try std.testing.expect(std.mem.indexOf(u8, out, "width=\"630\" height=\"210\"") != null);
+    try std.testing.expect(std.mem.endsWith(u8, out, "</canvas>"));
 }

@@ -140,3 +140,17 @@ test "graphics responses identify negotiated protocols" {
     try std.testing.expect(!sixel.kitty);
     try std.testing.expect(sixel.sixel);
 }
+
+pub fn enter_alternate_screen(io: std.Io) !void {
+    try std.Io.File.stdout().writeStreamingAll(
+        io,
+        "\x1B[?1049h\x1B[?1000h\x1B[?1002h\x1B[?1006h",
+    );
+}
+
+pub fn exit_alternate_screen(io: std.Io) !void {
+    try std.Io.File.stdout().writeStreamingAll(
+        io,
+        "\x1B[?1006l\x1B[?1002l\x1B[?1000l\x1B[?1049l\x1B[?25h\x1B[0 q",
+    );
+}

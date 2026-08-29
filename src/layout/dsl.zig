@@ -1,6 +1,6 @@
 const std = @import("std");
 const box = @import("box.zig");
-const dom = @import("dom.zig");
+const dom = @import("element.zig");
 const tree_mod = @import("tree.zig");
 const style_mod = @import("style.zig");
 

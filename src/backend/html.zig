@@ -1,13 +1,14 @@
 const std = @import("std");
-const tree_mod = @import("tree.zig");
-const style_mod = @import("style.zig");
-const dom = @import("dom.zig");
+const tree_mod = @import("../layout/tree.zig");
+const style_mod = @import("../layout/style.zig");
+const dom = @import("../layout/element.zig");
+const Units = @import("../layout/units.zig").Units;
 
 const Tree = tree_mod.Tree;
 const Index = tree_mod.Index;
 const none = tree_mod.none;
 const Style = style_mod.Style;
-const rect_zero = @import("rect.zig").Rect{};
+const rect_zero = @import("../layout/rect.zig").Rect{};
 
 pub const styles_max: usize = 32;
 
@@ -60,8 +61,7 @@ pub const Horizontal = enum {
 };
 
 pub const Options = struct {
-    unit_width_px: u16 = 9,
-    unit_height_px: u16 = 19,
+    units: Units = .{ .width = 9, .height = 19 },
     horizontal: Horizontal = .pixels,
     surface_class: []const u8 = "p",
     transform: bool = false,
@@ -75,7 +75,7 @@ pub const Options = struct {
 
     pub fn scale_horizontal(self: Options, units: i32) i32 {
         return switch (self.horizontal) {
-            .pixels => units * self.unit_width_px,
+            .pixels => self.units.x(units),
             .characters => units,
         };
     }
@@ -83,7 +83,7 @@ pub const Options = struct {
 
 pub fn write_reset(writer: *std.Io.Writer, options: Options) !void {
     std.debug.assert(options.surface_class.len > 0);
-    std.debug.assert(options.unit_width_px > 0);
+    std.debug.assert(options.units.width > 0);
     const class = options.surface_class;
     try writer.print(".{s}{{position:relative}}", .{class});
     try writer.print(
@@ -95,17 +95,20 @@ pub fn write_reset(writer: *std.Io.Writer, options: Options) !void {
         ".{s} .{s}{{position:static;white-space:inherit}}",
         .{ class, inline_class },
     );
+    try writer.print(".{s} :is(b,strong){{font-weight:700}}", .{class});
+    try writer.print(".{s} :is(i,em){{font-style:italic}}", .{class});
     try writer.print(".{s} pre{{white-space:pre;overflow-x:auto}}", .{class});
     try writer.print(".{s} ul{{list-style:none;padding:0}}", .{class});
     try writer.print(
         ".{s} img{{object-fit:contain;object-position:left top;max-width:100%}}",
         .{class},
     );
+    try writer.print(".{s} canvas{{max-width:100%}}", .{class});
 }
 
 pub fn write_flow(writer: *std.Io.Writer, options: Options) !void {
     std.debug.assert(options.surface_class.len > 0);
-    std.debug.assert(options.unit_width_px > 0);
+    std.debug.assert(options.units.width > 0);
     try writer.print(
         ".{s} *:not(.{s}){{position:static;display:block;" ++
             "width:auto!important;height:auto!important}}",
@@ -204,6 +207,12 @@ fn write_node(
         try write_escaped_attribute(writer, node.text);
         try writer.writeAll("\" loading=\"lazy\"");
     }
+    if (node.element == .canvas) {
+        try writer.print(" width=\"{d}\" height=\"{d}\"", .{
+            options.scale_horizontal(node.rect.width),
+            options.units.y(node.rect.height),
+        });
+    }
 
     const style_index = if (node.style.is_empty()) null else table.index_of(node.style);
     try write_class(writer, node.is_inline(), style_index);
@@ -251,7 +260,7 @@ fn write_box(
     options: Options,
 ) !void {
     std.debug.assert(index < tree.len);
-    std.debug.assert(options.unit_height_px > 0);
+    std.debug.assert(options.units.height > 0);
     const node = tree.at(index);
     const origin = if (node.parent == none)
         rect_zero
@@ -259,8 +268,8 @@ fn write_box(
         tree.at(node.parent).rect;
 
     const columns = node.rect.x - origin.x;
-    const y = (node.rect.y - origin.y) * options.unit_height_px;
-    const height = node.rect.height * options.unit_height_px;
+    const y = options.units.y(node.rect.y - origin.y);
+    const height = options.units.y(node.rect.height);
     const unit = options.horizontal_unit();
     const x = options.scale_horizontal(columns);
     const width = options.scale_horizontal(node.rect.width);
@@ -276,10 +285,10 @@ fn write_box(
     const pad = node.layout.padding;
     if (pad.left != 0 or pad.right != 0 or pad.top != 0 or pad.bottom != 0) {
         try writer.print(";padding:{d}px {d}{s} {d}px {d}{s}", .{
-            pad.top * options.unit_height_px,
+            options.units.y(pad.top),
             options.scale_horizontal(pad.right),
             unit,
-            pad.bottom * options.unit_height_px,
+            options.units.y(pad.bottom),
             options.scale_horizontal(pad.left),
             unit,
         });

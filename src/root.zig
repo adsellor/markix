@@ -1,39 +1,42 @@
-/// The whole public surface, flat at the top so one import is enough to
-/// build an application.
+pub const layout = @import("layout.zig");
+pub const widgets = @import("widgets.zig");
+pub const backend = @import("backend.zig");
 
-// Value types.
-pub const Color = @import("style/color.zig").Color;
-pub const Rect = @import("layout/rect.zig").Rect;
-pub const Style = @import("style/style.zig").Style;
-pub const TextSelectionStyle = @import("style/style.zig").TextSelectionStyle;
-pub const TextStyle = @import("style/text_style.zig").TextStyle;
-pub const Attributes = @import("style/text_style.zig").Attributes;
+pub const Color = layout.Color;
+pub const Style = layout.Style;
+pub const Rect = layout.Rect;
+pub const Edges = layout.Edges;
+pub const Units = layout.Units;
+pub const Element = layout.Element;
+pub const Tree = layout.Tree;
+pub const Node = layout.Node;
+pub const Index = layout.Index;
+pub const none = layout.none;
+pub const dsl = layout.dsl;
+pub const resolve = layout.resolve;
+pub const unbounded = layout.unbounded;
+pub const measure = layout.measure;
+pub const Size = layout.Size;
+pub const Measure = layout.Measure;
+pub const TextIterator = layout.TextIterator;
+pub const Sizing = layout.Sizing;
+pub const Direction = layout.Direction;
+pub const Alignment = layout.Alignment;
+pub const Display = layout.Display;
 
-// Input, shared by the terminal and web backends.
+pub const Renderer = backend.Renderer;
+
 pub const Key = @import("utils/input.zig").Key;
 pub const Pointer = @import("utils/input.zig").Pointer;
 pub const PointerAction = @import("utils/input.zig").PointerAction;
 pub const PointerButton = @import("utils/input.zig").PointerButton;
 
-// The event loop an application runs.
-pub const Event = @import("backend/terminal/event.zig").Event;
-pub const LoopAction = @import("backend/terminal/event.zig").LoopAction;
-pub const LoopOptions = @import("backend/terminal/event.zig").LoopOptions;
-pub const run_event_loop = @import("backend/terminal/event.zig").run_event_loop;
+pub const Event = backend.terminal.Event;
+pub const LoopAction = backend.terminal.LoopAction;
+pub const LoopOptions = backend.terminal.LoopOptions;
+pub const run_event_loop = backend.terminal.run_event_loop;
+pub const LoopBackend = backend.Loop;
 
-// Widgets: the vocabulary of a screen.
-pub const widgets = @import("widgets.zig");
+pub const terminal = backend.terminal;
 
-pub const engine = @import("engine.zig");
-
-// Domains, each self-contained.
-pub const layout = @import("layout.zig");
-pub const terminal = @import("backend/terminal.zig");
-pub const theme = @import("theme.zig");
-pub const dom = @import("dom.zig");
-pub const render = @import("render.zig");
-
-// Parsers.
-pub const document = @import("parser/document.zig");
-pub const readable = @import("parser/readable.zig");
-pub const xml = @import("parser/xml.zig");
+pub const reader = @import("reader.zig");
