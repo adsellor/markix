@@ -15,8 +15,8 @@ pub const Color = struct {
     pub fn rgb(hex: u24) Color {
         return .{
             .kind = .rgb,
-            .r = @intCast(hex >> 16 & 0xff),
-            .g = @intCast(hex >> 8 & 0xff),
+            .r = @intCast((hex >> 16) & 0xff),
+            .g = @intCast((hex >> 8) & 0xff),
             .b = @intCast(hex & 0xff),
         };
     }
@@ -31,7 +31,7 @@ pub const Color = struct {
     }
 
     pub fn value(self: Color) u24 {
-        return @as(u24, self.r) << 16 | @as(u24, self.g) << 8 | self.b;
+        return (@as(u24, self.r) << 16) | (@as(u24, self.g) << 8) | self.b;
     }
 
     pub fn eql(self: Color, other: Color) bool {
