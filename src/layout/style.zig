@@ -10,6 +10,7 @@ pub const Color = struct {
         none,
         rgb,
         ansi,
+        default,
     };
 
     pub fn rgb(hex: u24) Color {
@@ -24,6 +25,10 @@ pub const Color = struct {
     pub fn ansi(index: u8) Color {
         std.debug.assert(index < 16);
         return .{ .kind = .ansi, .r = index };
+    }
+
+    pub fn default() Color {
+        return .{ .kind = .default };
     }
 
     pub fn is_set(self: Color) bool {

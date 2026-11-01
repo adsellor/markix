@@ -21,6 +21,7 @@ pub const Draw = struct {
     damage: Rect = .{},
     color: u32 = 0,
     text: []const u8 = "",
+    digest: u64 = 0,
     bold: bool = false,
     attributes: u32 = 0,
     node: Index = none,
@@ -37,7 +38,8 @@ pub const Draw = struct {
             self.rect.y == other.rect.y and
             self.rect.width == other.rect.width and
             self.rect.height == other.rect.height and
-            std.mem.eql(u8, self.text, other.text);
+            self.text.len == other.text.len and
+            self.digest == other.digest;
     }
 };
 
@@ -112,6 +114,7 @@ pub fn paint(frame: *Frame, tree: *const Tree, options: Options) void {
                 else
                     default_ink,
                 .text = text,
+                .digest = digest(text),
                 .bold = node.style.bold,
                 .node = index,
             });
@@ -120,6 +123,10 @@ pub fn paint(frame: *Frame, tree: *const Tree, options: Options) void {
 }
 
 pub const default_ink: u32 = 0xffffff;
+
+pub fn digest(text: []const u8) u64 {
+    return std.hash.Wyhash.hash(0, text);
+}
 
 pub fn text_of(tree: *const Tree, index: Index) []const u8 {
     const node = tree.at(index);

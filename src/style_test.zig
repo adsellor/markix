@@ -16,8 +16,10 @@ pub const source_files = [_]SourceFile{
     source("src/backend/renderer.zig", "backend/renderer.zig", true),
     source("src/backend/terminal.zig", "backend/terminal.zig", true),
     source("src/backend/terminal/event.zig", "backend/terminal/event.zig", true),
+    source("src/backend/terminal/graphics.zig", "backend/terminal/graphics.zig", true),
     source("src/backend/terminal/input.zig", "backend/terminal/input.zig", true),
     source("src/backend/terminal/limits.zig", "backend/terminal/limits.zig", true),
+    source("src/backend/terminal/sixel.zig", "backend/terminal/sixel.zig", true),
     source("src/backend/terminal/terminal.zig", "backend/terminal/terminal.zig", true),
     source("src/layout.zig", "layout.zig", true),
     source("src/layout/box.zig", "layout/box.zig", true),
@@ -36,6 +38,7 @@ pub const source_files = [_]SourceFile{
     source("src/tests.zig", "tests.zig", false),
     source("src/utils/input.zig", "utils/input.zig", true),
     source("src/widgets.zig", "widgets.zig", true),
+    source("src/widgets/text_input.zig", "widgets/text_input.zig", true),
 };
 
 fn source(

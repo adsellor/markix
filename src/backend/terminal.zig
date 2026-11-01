@@ -12,3 +12,9 @@ pub const enter_alternate_screen =
     @import("terminal/terminal.zig").enter_alternate_screen;
 pub const exit_alternate_screen =
     @import("terminal/terminal.zig").exit_alternate_screen;
+
+pub const graphics = @import("terminal/graphics.zig");
+pub const Graphics = graphics.Graphics;
+pub const GraphicsCapabilities = @import("terminal/terminal.zig").GraphicsCapabilities;
+pub const query_graphics_capabilities =
+    @import("terminal/terminal.zig").query_graphics_capabilities;

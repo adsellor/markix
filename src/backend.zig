@@ -16,4 +16,6 @@ test {
     _ = patch;
     _ = @import("backend/terminal/input.zig");
     _ = @import("backend/terminal/terminal.zig");
+    _ = @import("backend/terminal/graphics.zig");
+    _ = @import("backend/terminal/sixel.zig");
 }

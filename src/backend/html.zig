@@ -128,15 +128,19 @@ pub fn write_styles(
     }
 }
 
+fn shows(color: style_mod.Color) bool {
+    return color.is_set() and color.kind != .default;
+}
+
 fn write_declarations(writer: *std.Io.Writer, style: Style) !void {
     std.debug.assert(!style.is_empty());
     var written = false;
     std.debug.assert(!written);
-    if (style.foreground.is_set()) {
+    if (shows(style.foreground)) {
         try writer.print("color:#{x:0>6}", .{style.foreground.value()});
         written = true;
     }
-    if (style.background.is_set()) {
+    if (shows(style.background)) {
         if (written) try writer.writeAll(";");
         try writer.print("background:#{x:0>6}", .{style.background.value()});
         written = true;

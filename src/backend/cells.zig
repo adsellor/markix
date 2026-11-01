@@ -5,6 +5,7 @@ const style_mod = @import("../layout/style.zig");
 const measure = @import("../layout/measure.zig");
 const canvas_mod = @import("canvas.zig");
 const patch = @import("patch.zig");
+const graphics_mod = @import("terminal/graphics.zig");
 
 const Tree = tree_mod.Tree;
 const Rect = @import("../layout/rect.zig").Rect;
@@ -40,6 +41,7 @@ pub const Screen = struct {
     current_source: tree_mod.Index = tree_mod.none,
     clip: ?Rect = null,
     dirty: ?[]const Rect = null,
+    graphics: ?*graphics_mod.Graphics = null,
 
     pub fn init(storage: []Cell, width: i32, height: i32) Screen {
         std.debug.assert(width >= 0 and height >= 0);
@@ -144,6 +146,20 @@ pub const Screen = struct {
             while (column < rect.x + rect.width) : (column += 1) {
                 const cell = self.at(column, row) orelse continue;
                 cell.style.background = background;
+            }
+        }
+    }
+
+    pub fn cover(self: *Screen, rect: Rect, background: Color) void {
+        std.debug.assert(rect.width >= 0);
+        std.debug.assert(rect.height >= 0);
+        const blank = Cell.blank(.{ .background = background });
+        var row = rect.y;
+        while (row < rect.y + rect.height) : (row += 1) {
+            var column = rect.x;
+            while (column < rect.x + rect.width) : (column += 1) {
+                const cell = self.at(column, row) orelse continue;
+                cell.* = blank;
             }
         }
     }
@@ -292,6 +308,7 @@ fn write_color(writer: *std.Io.Writer, color: Color, role: u8) !void {
             color.b,
         }),
         .ansi => try writer.print("\x1b[{d};5;{d}m", .{ role, color.r }),
+        .default => {},
     }
 }
 
@@ -343,16 +360,25 @@ fn screen_render(context: *anyopaque, io: std.Io) !bool {
     std.debug.assert(self.output.len > 0);
     std.debug.assert(self.output.len >= self.cells.len * Screen.escape_per_cell);
     var writer = std.Io.Writer.fixed(self.output);
-    if (self.dirty) |regions| {
-        if (regions.len == 0) return false;
+    const stale = if (self.graphics) |graphics| graphics.stale() else null;
+    try write_frame(&writer, self, stale);
+    const wrote = writer.buffered().len > 0;
+    if (wrote) try std.Io.File.stdout().writeStreamingAll(io, writer.buffered());
+    if (self.graphics) |graphics| graphics.flush(io, self.dirty);
+    return wrote;
+}
+
+fn write_frame(writer: *std.Io.Writer, screen: *const Screen, stale: ?Rect) !void {
+    std.debug.assert(screen.width > 0);
+    std.debug.assert(writer.buffered().len == 0);
+    const regions = screen.dirty orelse {
         try writer.writeAll(home);
-        for (regions) |region| try write_region(&writer, self, region, .{});
-    } else {
-        try writer.writeAll(home);
-        try write_ansi(&writer, self, .{ .last_newline = false });
-    }
-    try std.Io.File.stdout().writeStreamingAll(io, writer.buffered());
-    return true;
+        return write_ansi(writer, screen, .{ .last_newline = false });
+    };
+    if (regions.len == 0 and stale == null) return;
+    try writer.writeAll(home);
+    for (regions) |region| try write_region(writer, screen, region, .{});
+    if (stale) |region| try write_region(writer, screen, region, .{});
 }
 
 pub const home = "\x1b[H" ++ hide_cursor;
@@ -362,8 +388,8 @@ const hide_cursor = "\x1b[?25l";
 fn screen_poll_background(context: *anyopaque, io: std.Io) !bool {
     const self: *Screen = @ptrCast(@alignCast(context));
     std.debug.assert(self.width > 0);
-    _ = io;
-    return false;
+    const graphics = self.graphics orelse return false;
+    return graphics.poll(io);
 }
 
 fn screen_handle_pointer(
@@ -696,6 +722,7 @@ pub const Options = struct {
     focus_style: Style = .{},
     rows_per_cell: i32 = 1,
     clip: ?Rect = null,
+    cover: bool = false,
 };
 
 pub fn paint(screen: *Screen, tree: *const Tree, styles: []Style, options: Options) void {
@@ -704,6 +731,46 @@ pub fn paint(screen: *Screen, tree: *const Tree, styles: []Style, options: Optio
     cascade(tree, styles, options);
     screen.dirty = null;
     paint_region(screen, tree, styles, options, options.clip);
+    request_images(screen, tree, styles, options);
+}
+
+fn request_images(
+    screen: *const Screen,
+    tree: *const Tree,
+    styles: []const Style,
+    options: Options,
+) void {
+    std.debug.assert(styles.len >= tree.len);
+    std.debug.assert(options.rows_per_cell >= 1);
+    const graphics = screen.graphics orelse return;
+    if (tree.len == 0) return;
+    if (painted_of(tree, 0, styles, options, screen.height)) |root| graphics.cover(root.rect);
+    if (options.rows_per_cell != 1) return;
+    const bounds = narrow(Rect.init(0, 0, screen.width, screen.height), options.clip).?;
+    var index: tree_mod.Index = 0;
+    while (index < tree.len) : (index += 1) {
+        const node = tree.at(index);
+        if (node.element != .image) continue;
+        const it = painted_of(tree, index, styles, options, screen.height) orelse continue;
+        const placement = image_placement(bounds, it.rect, node.href) orelse continue;
+        graphics.request(placement);
+        return;
+    }
+}
+
+fn image_placement(bounds: Rect, rect: Rect, path: []const u8) ?graphics_mod.Placement {
+    std.debug.assert(rect.width > 0);
+    std.debug.assert(rect.height > 0);
+    if (!std.fs.path.isAbsolute(path)) return null;
+    if (rect.height > std.math.maxInt(u16)) return null;
+    const visible = narrow(bounds, rect).?;
+    if (visible.width != rect.width or visible.height <= 0) return null;
+    return graphics_mod.Placement.init(
+        visible,
+        @intCast(visible.y - rect.y),
+        @intCast(rect.height),
+        path,
+    ) catch null;
 }
 
 fn cascade(tree: *const Tree, styles: []Style, options: Options) void {
@@ -845,6 +912,12 @@ pub const Damage = struct {
     }
 };
 
+pub const Layer = struct {
+    tree: *const Tree,
+    styles: []Style,
+    options: Options = .{},
+};
+
 pub fn repaint(
     screen: *Screen,
     damage: *Damage,
@@ -854,46 +927,59 @@ pub fn repaint(
 ) void {
     std.debug.assert(styles.len >= tree.len);
     std.debug.assert(options.clip == null);
-    cascade(tree, styles, options);
-    describe(
-        &damage.frames[damage.parity],
-        tree,
-        styles,
-        options,
-        screen.width,
-        screen.height,
-    );
-    const dirty = dirty_regions(damage, screen, tree, styles, options);
+    repaint_layers(screen, damage, &.{.{ .tree = tree, .styles = styles, .options = options }});
+}
+
+pub fn repaint_layers(screen: *Screen, damage: *Damage, layers: []const Layer) void {
+    std.debug.assert(layers.len > 0);
+    std.debug.assert(damage.parity < 2);
+    const base = layers[0].options.base;
+    const frame = &damage.frames[damage.parity];
+    frame.reset();
+    frame.width = screen.width;
+    frame.height = screen.height;
+    frame.background = base.background.value();
+    for (layers) |layer| {
+        std.debug.assert(layer.styles.len >= layer.tree.len);
+        cascade(layer.tree, layer.styles, layer.options);
+        describe(frame, layer, screen.height);
+    }
+    const dirty = dirty_regions(damage, screen, layers);
     if (dirty) |regions| {
         for (regions) |region| {
-            screen.erase(region, options.base);
-            paint_region(screen, tree, styles, options, region);
+            screen.erase(region, base);
+            for (layers, 0..) |layer, index| paint_layer(screen, layer, region, index > 0);
         }
     } else {
-        screen.clear(options.base);
-        paint_region(screen, tree, styles, options, null);
+        screen.clear(base);
+        for (layers, 0..) |layer, index| paint_layer(screen, layer, null, index > 0);
     }
     screen.dirty = dirty;
+    for (layers) |layer| request_images(screen, layer.tree, layer.styles, layer.options);
     damage.parity = 1 - damage.parity;
+}
+
+fn paint_layer(screen: *Screen, layer: Layer, region: ?Rect, above: bool) void {
+    const clip = narrow(region, layer.options.clip);
+    if (clip) |box| {
+        if (box.width <= 0 or box.height <= 0) return;
+    }
+    var options = layer.options;
+    options.cover = options.cover or above;
+    paint_region(screen, layer.tree, layer.styles, options, clip);
 }
 
 const partial_share: i32 = 2;
 
-fn dirty_regions(
-    damage: *Damage,
-    screen: *const Screen,
-    tree: *const Tree,
-    styles: []const Style,
-    options: Options,
-) ?[]const Rect {
+fn dirty_regions(damage: *Damage, screen: *const Screen, layers: []const Layer) ?[]const Rect {
     std.debug.assert(damage.parity < 2);
-    std.debug.assert(styles.len >= tree.len);
+    std.debug.assert(layers.len > 0);
     const next = &damage.frames[damage.parity];
     const previous = &damage.frames[1 - damage.parity];
     const found = patch.regions(&damage.regions, previous, next) orelse return null;
     var count = found.len;
-    if (!collect_holes(&damage.regions, &count, tree, styles, options, screen.height)) {
-        return null;
+    for (layers) |layer| {
+        if (!collect_holes(&damage.regions, &count, layer, screen.height)) return null;
     }
     const regions = damage.regions[0..count];
     var area: i32 = 0;
@@ -902,21 +988,15 @@ fn dirty_regions(
     return regions;
 }
 
-fn collect_holes(
-    into: []Rect,
-    count: *usize,
-    tree: *const Tree,
-    styles: []const Style,
-    options: Options,
-    height: i32,
-) bool {
+fn collect_holes(into: []Rect, count: *usize, layer: Layer, height: i32) bool {
     std.debug.assert(into.len > 0);
     std.debug.assert(count.* <= into.len);
-    const hole = options.canvas orelse return true;
+    const hole = layer.options.canvas orelse return true;
+    const tree = layer.tree;
     var index: tree_mod.Index = 0;
     while (index < tree.len) : (index += 1) {
         if (tree.at(index).element != .canvas) continue;
-        const it = painted_of(tree, index, styles, options, height) orelse continue;
+        const it = painted_of(tree, index, layer.styles, layer.options, height) orelse continue;
         const ask = hole.damage orelse {
             if (!patch.merge_region(into, count, it.rect)) return false;
             continue;
@@ -927,29 +1007,20 @@ fn collect_holes(
     return true;
 }
 
-fn describe(
-    out: *canvas_mod.Frame,
-    tree: *const Tree,
-    styles: []const Style,
-    options: Options,
-    width: i32,
-    height: i32,
-) void {
-    std.debug.assert(styles.len >= tree.len);
-    std.debug.assert(options.rows_per_cell >= 1);
-    out.reset();
-    out.width = width;
-    out.height = height;
-    out.background = options.base.background.value();
+fn describe(out: *canvas_mod.Frame, layer: Layer, height: i32) void {
+    std.debug.assert(layer.styles.len >= layer.tree.len);
+    std.debug.assert(layer.options.rows_per_cell >= 1);
     var index: tree_mod.Index = 0;
-    while (index < tree.len) : (index += 1) {
-        const it = painted_of(tree, index, styles, options, height) orelse continue;
-        out.push(describe_node(tree, index, it, options));
+    while (index < layer.tree.len) : (index += 1) {
+        const it = painted_of(layer.tree, index, layer.styles, layer.options, height) orelse
+            continue;
+        out.push(describe_node(layer.tree, layer.styles, index, it, layer.options));
     }
 }
 
 fn describe_node(
     tree: *const Tree,
+    styles: []const Style,
     index: tree_mod.Index,
     it: Painted,
     options: Options,
@@ -962,18 +1033,65 @@ fn describe_node(
         .image, .canvas => Color.rgb(options.palette.line),
         else => ground_of(node, it.style, it.focused),
     };
+    const text = if (node.element == .canvas) node.id else canvas_mod.text_of(tree, index);
     return .{
         .rect = it.rect,
         .damage = it.rect,
         .color = ground.value(),
-        .text = if (node.element == .canvas)
-            node.id
-        else
-            canvas_mod.text_of(tree, index),
+        .text = text,
+        .digest = content_digest(tree, styles, index, text),
         .bold = it.style.bold,
         .attributes = attributes_of(it.style, ground),
         .node = index,
     };
+}
+
+const inline_depth_max: usize = 16;
+
+fn content_digest(
+    tree: *const Tree,
+    styles: []const Style,
+    index: tree_mod.Index,
+    text: []const u8,
+) u64 {
+    std.debug.assert(index < tree.len);
+    std.debug.assert(styles.len >= tree.len);
+    var hasher = std.hash.Wyhash.init(0);
+    hasher.update(std.mem.asBytes(&text.len));
+    hasher.update(text);
+    var stack: [inline_depth_max]tree_mod.Index = undefined;
+    var depth: usize = 0;
+    var child = tree.at(index).first_child;
+    while (true) {
+        while (child == tree_mod.none and depth > 0) {
+            depth -= 1;
+            child = tree.at(stack[depth]).next_sibling;
+        }
+        if (child == tree_mod.none) break;
+        const kid = tree.at(child);
+        if (!kid.is_inline()) {
+            child = kid.next_sibling;
+            continue;
+        }
+        const style = styles[child];
+        const shape = [5]u32{
+            @intCast(kid.text.len),
+            style.foreground.value(),
+            style.background.value(),
+            attributes_of(style, style.background),
+            @intFromBool(style.bold),
+        };
+        hasher.update(std.mem.asBytes(&shape));
+        hasher.update(kid.text);
+        if (kid.first_child != tree_mod.none and depth < stack.len) {
+            stack[depth] = child;
+            depth += 1;
+            child = kid.first_child;
+        } else {
+            child = kid.next_sibling;
+        }
+    }
+    return hasher.final();
 }
 
 fn attributes_of(style: Style, ground: Color) u32 {
@@ -1032,11 +1150,14 @@ fn paint_node(
                 if (options.rows_per_cell > 1) {
                     fill_half_rows(screen, ink, ground, options.rows_per_cell);
                 } else {
-                    screen.fill(rect, ground);
+                    if (options.cover) screen.cover(rect, ground) else screen.fill(rect, ground);
                 }
             }
             if (!holds_text(tree, index)) return;
             const padding = node.layout.padding;
+            const restore = screen.clip;
+            defer screen.clip = restore;
+            if (node.clip) screen.clip = narrow(restore, rect);
             _ = flow_paint(screen, tree, index, .{
                 .x = rect.x + padding.left,
                 .y = rect.y + padding.top,
@@ -1679,4 +1800,196 @@ test "a region is sent where it belongs and nowhere else" {
     try testing.expect(std.mem.indexOf(u8, out, "\x1b[2;1H") != null);
     try testing.expect(std.mem.indexOf(u8, out, "middle") != null);
     try testing.expect(std.mem.indexOf(u8, out, "top") == null);
+}
+
+test "an image scrolled half off the screen is placed by its visible rows" {
+    var nodes: [8]tree_mod.Node = undefined;
+    var tree = Tree.init(&nodes);
+    const root = try el.mount_under(&tree, tree_mod.none, el.column(.{
+        .width = .{ .fixed = 20 },
+    }, .{}));
+    _ = try el.mount_under(&tree, root, el.image("/tmp/cover.png", "cover", .{
+        .width = .{ .fixed = 12 },
+        .height = .{ .fixed = 6 },
+    }));
+    resolve_for_test(&tree, 20);
+
+    var graphics = try graphics_mod.Graphics.alloc(testing.allocator, .kitty);
+    defer graphics.free(testing.allocator);
+    var cells: [20 * 4]Cell = undefined;
+    var screen = Screen.init(&cells, 20, 4);
+    screen.graphics = &graphics;
+    screen.clear(.{});
+    var styles: [8]Style = undefined;
+    paint(&screen, &tree, &styles, .{ .scroll = 4 });
+
+    const placement = graphics.requested.?;
+    try testing.expectEqual(@as(u16, 0), placement.y);
+    try testing.expectEqual(@as(u16, 2), placement.height);
+    try testing.expectEqual(@as(u16, 4), placement.crop_top_rows);
+    try testing.expectEqual(@as(u16, 6), placement.full_height_rows);
+}
+
+test "a tree painted over an image hides it and a relative source is never placed" {
+    var nodes: [8]tree_mod.Node = undefined;
+    var tree = Tree.init(&nodes);
+    try el.mount(&tree, el.image("/tmp/cover.png", "cover", .{
+        .width = .{ .fixed = 8 },
+        .height = .{ .fixed = 3 },
+    }));
+    resolve_for_test(&tree, 8);
+    var overlay_nodes: [8]tree_mod.Node = undefined;
+    var overlay = Tree.init(&overlay_nodes);
+    try el.mount(&overlay, el.text("menu", .{ .width = .{ .fixed = 4 } }));
+    resolve_for_test(&overlay, 4);
+
+    var graphics = try graphics_mod.Graphics.alloc(testing.allocator, .kitty);
+    defer graphics.free(testing.allocator);
+    var cells: [8 * 3]Cell = undefined;
+    var screen = Screen.init(&cells, 8, 3);
+    screen.graphics = &graphics;
+    screen.clear(.{});
+    var styles: [8]Style = undefined;
+    paint(&screen, &tree, &styles, .{});
+    try testing.expect(graphics.requested != null);
+    paint(&screen, &overlay, &styles, .{ .x = 2, .y = 1 });
+    try testing.expect(graphics.requested == null);
+
+    tree.at(0).href = "cover.png";
+    paint(&screen, &tree, &styles, .{});
+    try testing.expect(graphics.requested == null);
+}
+
+const Popup = struct {
+    nodes: [8]tree_mod.Node = undefined,
+    tree: Tree = undefined,
+    styles: [8]Style = undefined,
+
+    fn build(self: *Popup, label: []const u8) !void {
+        self.tree = Tree.init(&self.nodes);
+        try el.mount(&self.tree, el.column(.{
+            .width = .{ .fixed = 10 },
+            .style = .{ .background = Color.rgb(0x26233a) },
+        }, .{
+            el.text(label, .{ .width = .{ .fixed = 10 } }),
+        }));
+        resolve_for_test(&self.tree, 10);
+    }
+
+    fn layer(self: *Popup) Layer {
+        return .{ .tree = &self.tree, .styles = &self.styles, .options = .{ .x = 6, .y = 3 } };
+    }
+};
+
+test "a popup over the page repaints alone once it is open" {
+    var page = Page{};
+    try page.build();
+    var tracked = Tracked{};
+    tracked.start();
+    var popup = Popup{};
+    try popup.build("abc");
+
+    tracked.frame(&page.tree, .{});
+    tracked.frame(&page.tree, .{});
+    const base = Layer{ .tree = &page.tree, .styles = &tracked.styles };
+    repaint_layers(&tracked.screen, &tracked.damage, &.{ base, popup.layer() });
+    try testing.expect(tracked.screen.dirty == null);
+    try testing.expectEqualStrings("a", tracked.screen.at(6, 3).?.text());
+
+    try popup.build("abd");
+    repaint_layers(&tracked.screen, &tracked.damage, &.{ base, popup.layer() });
+    try testing.expect(touched(&tracked.screen) > 0);
+    try testing.expect(touched(&tracked.screen) <= 10);
+
+    var whole_cells: [Page.columns * Page.rows]Cell = undefined;
+    var whole_styles: [64]Style = undefined;
+    var whole = Screen.init(&whole_cells, Page.columns, Page.rows);
+    whole.clear(.{});
+    paint(&whole, &page.tree, &whole_styles, .{});
+    paint(&whole, &popup.tree, &popup.styles, popup.layer().options);
+    try testing.expect(same_cells(&tracked.screen, &whole));
+}
+
+test "a clipped node keeps its text inside its own rect" {
+    var nodes: [8]tree_mod.Node = undefined;
+    var tree = Tree.init(&nodes);
+    try el.mount(&tree, el.row(.{ .width = .{ .fixed = 12 } }, .{
+        el.text("overflowing", .{ .width = .{ .fixed = 4 }, .wrap = false, .clip = true }),
+        el.text("next", .{ .width = .{ .fixed = 8 }, .wrap = false }),
+    }));
+    resolve_for_test(&tree, 12);
+
+    var cells: [12 * 1]Cell = undefined;
+    var screen = Screen.init(&cells, 12, 1);
+    screen.clear(.{});
+    var styles: [8]Style = undefined;
+    paint(&screen, &tree, &styles, .{});
+
+    try testing.expectEqualStrings("o", screen.at(0, 0).?.text());
+    try testing.expectEqualStrings("r", screen.at(3, 0).?.text());
+    try testing.expectEqualStrings("n", screen.at(4, 0).?.text());
+    try testing.expectEqualStrings(" ", screen.at(8, 0).?.text());
+}
+
+test "a default ground is the terminal's own colour and still covers what lies under it" {
+    var page = Page{};
+    try page.build();
+    var tracked = Tracked{};
+    tracked.start();
+    var overlay_nodes: [4]tree_mod.Node = undefined;
+    var overlay = Tree.init(&overlay_nodes);
+    try el.mount(&overlay, el.column(.{
+        .width = .{ .fixed = 8 },
+        .height = .{ .fixed = 2 },
+        .style = .{ .background = Color.default() },
+    }, .{}));
+    resolve_for_test(&overlay, 8);
+    var overlay_styles: [4]Style = undefined;
+
+    const base = Layer{ .tree = &page.tree, .styles = &tracked.styles };
+    const top = Layer{ .tree = &overlay, .styles = &overlay_styles };
+    repaint_layers(&tracked.screen, &tracked.damage, &.{ base, top });
+
+    try testing.expectEqualStrings(" ", tracked.screen.at(0, 0).?.text());
+    try testing.expectEqualStrings(" ", tracked.screen.at(7, 1).?.text());
+    try testing.expect(line_at(&tracked.screen, 2).len > 0);
+
+    var bytes: [64]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&bytes);
+    try write_style(&writer, .{ .background = Color.default() });
+    try testing.expectEqualStrings("\x1b[0m", writer.buffered());
+}
+
+fn typed(tree: *Tree, value: []const u8, cursor: []const u8) !void {
+    tree.reset();
+    try el.mount(tree, el.column(.{ .width = .{ .fixed = Page.columns } }, .{
+        el.rich(.{ .width = .{ .fixed = Page.columns }, .wrap = false }, .{
+            el.run(":", .{}),
+            el.run(value, .{}),
+            el.run(cursor, .{ .style = .{ .background = Color.rgb(0x31748f) } }),
+        }),
+    }));
+    resolve_for_test(tree, Page.columns);
+}
+
+test "a run that changed inside a line repaints the line" {
+    var nodes: [8]tree_mod.Node = undefined;
+    var tree = Tree.init(&nodes);
+    var tracked = Tracked{};
+    tracked.start();
+
+    try typed(&tree, "ab", " ");
+    tracked.frame(&tree, .{});
+    try typed(&tree, "ab", " ");
+    tracked.frame(&tree, .{});
+    try testing.expectEqual(@as(i32, 0), touched(&tracked.screen));
+
+    try typed(&tree, "ac", " ");
+    tracked.frame(&tree, .{});
+    try testing.expect(touched(&tracked.screen) > 0);
+    try testing.expectEqualStrings("c", tracked.screen.at(2, 0).?.text());
+
+    try typed(&tree, "ac", "x");
+    tracked.frame(&tree, .{});
+    try testing.expectEqualStrings("x", tracked.screen.at(3, 0).?.text());
 }

@@ -33,6 +33,7 @@ pub const Options = struct {
     level: u8 = 0,
     wrap: bool = true,
     line_units: u8 = 1,
+    clip: bool = false,
     hidden: bool = false,
 };
 
@@ -70,6 +71,7 @@ fn make(
             .level = options.level,
             .wrap = options.wrap,
             .line_units = options.line_units,
+            .clip = options.clip,
         },
         .children = children,
         .hidden = options.hidden,

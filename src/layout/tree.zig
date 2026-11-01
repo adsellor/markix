@@ -21,6 +21,7 @@ pub const Node = struct {
     level: u8 = 0,
     wrap: bool = true,
     line_units: u8 = 1,
+    clip: bool = false,
     rect: Rect = .{},
     measured: Rect = .{},
 
